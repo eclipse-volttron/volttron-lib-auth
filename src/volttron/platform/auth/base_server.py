@@ -1,6 +1,9 @@
+from volttron.platform.auth import BaseAuthentication
+
+
 class BaseServerAuthentication(BaseAuthentication):
     def __init__(self, auth_service=None) -> None:
-        super(BaseServerAuthentication, self).__init__()
+        super().__init__()
         self.auth_service = auth_service
         self.authorization = None
 
