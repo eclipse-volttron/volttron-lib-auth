@@ -117,6 +117,14 @@ class AuthException(Exception):
 
 class AuthService(ServiceInterface):
 
+    @staticmethod
+    def get_kwargs_defaults():
+        kwargs = {
+            'auth_file': str(cc.get_volttron_home_path("auth.json")),
+            'protected_topics_file': str(cc.get_volttron_home_path("protected_topics.json"))
+        }
+        return kwargs
+
     def __init__(self, auth_file: str, protected_topics_file: str, **kwargs):
 
         self.allow_any = kwargs.pop("allow_any", False)
