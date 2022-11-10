@@ -165,7 +165,7 @@ class AuthService(ServiceInterface):
         if not len(self.auth_entries):
             for cred in server_credential, service_credential:
                 entry = AuthEntry(credentials=cred.credentials, mechanism=cred.type,
-                                  user_id=cred.identifier,
+                                  user_id=cred.identity,
                                   capabilities=[
                                       {
                                           "edit_config_store": {

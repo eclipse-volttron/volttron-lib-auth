@@ -24,7 +24,7 @@ class FileBasedCredentialManager(CredentialsManager):
         return creds
 
     def store(self, credentials: Credentials, overwrite=False):
-        cred_path = self._credential_store.joinpath(credentials.identifier)
+        cred_path = self._credential_store.joinpath(credentials.identity)
         if cred_path.exists() and not overwrite:
-            raise CredentialsExistError(credentials.identifier)
-        self._credential_store.joinpath(f"{credentials.identifier}.json").write_text(json.dumps(credentials.__dict__))
+            raise CredentialsExistError(credentials.identity)
+        self._credential_store.joinpath(f"{credentials.identity}.json").write_text(json.dumps(credentials.__dict__))
