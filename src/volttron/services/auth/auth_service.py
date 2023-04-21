@@ -48,37 +48,32 @@ import os
 import random
 import re
 import shutil
-from pathlib import Path
-from typing import Optional
 import uuid
 from collections import defaultdict
+from pathlib import Path
+from typing import Optional
 
 import gevent
 import gevent.core
+import volttron.types.server_config as sc
 from gevent import Greenlet
 from gevent.fileobject import FileObject
-from zmq import green as zmq
-
-from volttron.types import ServiceInterface, Credentials, MessageBusInterface
-from volttron.utils import (
-    ClientContext as cc,
-    create_file_if_missing,
-    strip_comments,
-)
-from volttron.utils import jsonapi
-from volttron.utils.filewatch import watch_file
-from volttron.utils.certs import Certs
+from volttron.client.known_identities import (CONTROL, CONTROL_CONNECTION,
+                                              VOLTTRON_CENTRAL_PLATFORM)
 # from volttron.utils.keystore import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
-from volttron.client.vip.agent import Agent, RPC, VIPError  # , # Core, RPC, VIPError
-from volttron.client.known_identities import (
-    VOLTTRON_CENTRAL_PLATFORM,
-    CONTROL,
-    CONTROL_CONNECTION,
-)
-
+from volttron.client.vip.agent import (
+    RPC,
+    Agent,    # , # Core, RPC, VIPError
+    VIPError)
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
-import volttron.types.server_config as sc
+from volttron.types import (Authentication, Authorization, Credentials, MessageBusInterface,
+                            ServiceInterface)
+from volttron.utils import ClientContext as cc
+from volttron.utils import create_file_if_missing, jsonapi, strip_comments
+from volttron.utils.certs import Certs
+from volttron.utils.filewatch import watch_file
+from zmq import green as zmq
 
 # from volttron.platform.certs import Certs
 # from volttron.platform.vip.agent.errors import VIPError
@@ -117,6 +112,10 @@ class AuthException(Exception):
 
 class AuthService(ServiceInterface):
 
+    def __init__(self, authenticator: Authentication, authorizer: Authorization):
+        self._authenticator = authenticator
+        self._authorizer = authorizer
+
     @staticmethod
     def get_kwargs_defaults():
         kwargs = {
@@ -125,35 +124,35 @@ class AuthService(ServiceInterface):
         }
         return kwargs
 
-    def __init__(self, auth_file: str, protected_topics_file: str, **kwargs):
+    # def __init__(self, auth_file: str, protected_topics_file: str, **kwargs):
 
-        self.allow_any = kwargs.pop("allow_any", False)
+    #     self.allow_any = kwargs.pop("allow_any", False)
 
-        super().__init__(**kwargs)
+    #     super().__init__(**kwargs)
 
-        # This agent is started before the router, so we need
-        # to keep it from blocking.
-        self.core.delay_running_event_set = False
-        self.auth_file_path = Path(auth_file)
-        self.auth_file = AuthFile(auth_file)
-        # self.aip = server_config.aip
-        self.auth_entries: List[AuthEntry] = []
-        self._is_connected = False
-        self._protected_topics_file_path = Path(protected_topics_file)
-        self._protected_topics_file = protected_topics_file
-        self._protected_topics_for_rmq = ProtectedPubSubTopics()
-        # self._setup_mode = server_config.opts.setup_mode
-        self._auth_pending = []
-        self._auth_denied = []
-        self._auth_approved = []
-        self._messagebus: Optional[MessageBusInterface] = None
+    #     # This agent is started before the router, so we need
+    #     # to keep it from blocking.
+    #     self.core.delay_running_event_set = False
+    #     self.auth_file_path = Path(auth_file)
+    #     self.auth_file = AuthFile(auth_file)
+    #     # self.aip = server_config.aip
+    #     self.auth_entries: List[AuthEntry] = []
+    #     self._is_connected = False
+    #     self._protected_topics_file_path = Path(protected_topics_file)
+    #     self._protected_topics_file = protected_topics_file
+    #     self._protected_topics_for_rmq = ProtectedPubSubTopics()
+    #     # self._setup_mode = server_config.opts.setup_mode
+    #     self._auth_pending = []
+    #     self._auth_denied = []
+    #     self._auth_approved = []
+    #     self._messagebus: Optional[MessageBusInterface] = None
 
-        def topics():
-            return defaultdict(set)
+    #     def topics():
+    #         return defaultdict(set)
 
-        self._user_to_permissions = topics()
+    #     self._user_to_permissions = topics()
 
-        self._watch_file_greenlets: List[Greenlet] = []
+    #     self._watch_file_greenlets: List[Greenlet] = []
 
     def set_messagebus(self, value: MessageBusInterface):
         if self._messagebus is not None:
@@ -164,7 +163,8 @@ class AuthService(ServiceInterface):
         self.read_auth_file()
         if not len(self.auth_entries):
             for cred in server_credential, service_credential:
-                entry = AuthEntry(credentials=cred.credentials, mechanism=cred.type,
+                entry = AuthEntry(credentials=cred.credentials,
+                                  mechanism=cred.type,
                                   user_id=cred.identity,
                                   capabilities=[
                                       {
@@ -177,11 +177,10 @@ class AuthService(ServiceInterface):
                                   comments="Automatically added by platform on start")
                 AuthFile().add(entry, overwrite=False)
         else:
-            value = filter(lambda entry: entry.credentials == server_credential.credentials, self.auth_entries)
+            value = filter(lambda entry: entry.credentials == server_credential.credentials,
+                           self.auth_entries)
             if not value:
                 raise ValueError("Credentials were not found for base server.")
-
-
 
     # @Core.receiver("onsetup")
     # def setup_zap(self, sender, **kwargs):
@@ -244,8 +243,8 @@ class AuthService(ServiceInterface):
         self._watch_file_greenlets.append(
             gevent.spawn(watch_file, self.auth_file_path, self.read_auth_file))
         self._watch_file_greenlets.append(
-            gevent.spawn(watch_file, self._protected_topics_file_path, self._read_protected_topics_file)
-        )
+            gevent.spawn(watch_file, self._protected_topics_file_path,
+                         self._read_protected_topics_file))
 
     def stop_watch_files(self):
         pass
