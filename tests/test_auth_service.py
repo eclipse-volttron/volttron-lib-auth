@@ -13,12 +13,16 @@ class DummyAuthentication(Authentication):
 
     def __init__(self) -> None:
         self._store = InMemoryCredentialStore()
-        creds = ClientCredentials("user", data="foo")
-        self._store.store_credentials(creds.identity, creds)
+
+    def add_credentials(self, identifier: str, credentials: Credentials):
+        self._store.store_credentials(identifier, credentials)
+
+    def remove_credentials(self, identifier: str):
+        self._store.delete_credentials(identifier)
 
     def authenticate(self, credentials: Credentials) -> bool:
         try:
-            creds: Credentials = self._store.retrieve_credentials(credentials.identity)
+            creds: Credentials = self._store.retrieve_credentials(credentials.get_identifier())
         except IdentityNotFound:
             return False
 
@@ -116,6 +120,7 @@ def service_auth_params():
 def test_dummy_auth():
     auth = DummyAuthentication()
     client = ClientCredentials("user", data="foo")
+    auth.add_credentials(client.get_identifier(), client)
 
     assert auth.authenticate(client)
 
