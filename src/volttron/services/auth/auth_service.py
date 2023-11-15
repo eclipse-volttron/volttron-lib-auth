@@ -51,24 +51,22 @@ import shutil
 import uuid
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import gevent
 import gevent.core
 import volttron.types.server_config as sc
 from gevent import Greenlet
 from gevent.fileobject import FileObject
-from volttron.client.known_identities import (CONTROL, CONTROL_CONNECTION,
+from volttron.client.known_identities import (AUTH, CONTROL, CONTROL_CONNECTION,
                                               VOLTTRON_CENTRAL_PLATFORM)
 # from volttron.utils.keystore import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
-from volttron.client.vip.agent import (
-    RPC,
-    Agent,    # , # Core, RPC, VIPError
-    VIPError)
+from volttron.client.vip.agent import Agent    # , # Core, RPC, VIPError
+from volttron.client.vip.agent import RPC, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
-from volttron.types import (Authentication, Authorization, Credentials, MessageBusInterface,
-                            ServiceInterface)
+from volttron.types import (Authentication, Authorization, Credentials, MessageBusInterface)
+from volttron.types.service import ServiceInterface
 from volttron.utils import ClientContext as cc
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
 from volttron.utils.certs import Certs
@@ -112,17 +110,15 @@ class AuthException(Exception):
 
 class AuthService(ServiceInterface):
 
-    def __init__(self, authenticator: Authentication, authorizer: Authorization):
+    def __init__(self, authenticator: Authentication, authorizer: Authorization, **kwargs):
+        super().__init__(**kwargs)
         self._authenticator = authenticator
         self._authorizer = authorizer
+        #self._auth_file = AuthFile(str(cc.get_volttron_home("auth_file.json")))
 
     @staticmethod
     def get_kwargs_defaults():
-        kwargs = {
-            'auth_file': str(cc.get_volttron_home_path("auth.json")),
-            'protected_topics_file': str(cc.get_volttron_home_path("protected_topics.json"))
-        }
-        return kwargs
+        return {}
 
     # def __init__(self, auth_file: str, protected_topics_file: str, **kwargs):
 
@@ -1209,6 +1205,10 @@ class AuthFile(object):
             auth_file = os.path.join(auth_file_dir, "auth.json")
         self.auth_file = auth_file
         self._check_for_upgrade()
+
+    @property
+    def path(self) -> Path:
+        return Path(self.auth_file)
 
     @property
     def version(self):
