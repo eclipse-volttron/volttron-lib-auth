@@ -57,9 +57,9 @@ import gevent
 import gevent.core
 from gevent import Greenlet
 from gevent.fileobject import FileObject
-from zmq import green as zmq
 
-from volttron.types import ServiceInterface, Credentials, MessageBusInterface
+from volttron.decorators import authservice
+from volttron.types.auth import Credentials
 from volttron.utils import (
     ClientContext as cc,
     create_file_if_missing,
@@ -69,7 +69,7 @@ from volttron.utils import jsonapi
 from volttron.utils.filewatch import watch_file
 from volttron.utils.certs import Certs
 # from volttron.utils.keystore import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
-from volttron.client.vip.agent import Agent, RPC, VIPError  # , # Core, RPC, VIPError
+from volttron.client.vip.agent import RPC, VIPError  # , # Core, RPC, VIPError
 from volttron.client.known_identities import (
     VOLTTRON_CENTRAL_PLATFORM,
     CONTROL,
@@ -115,7 +115,10 @@ class AuthException(Exception):
     pass
 
 
-class AuthService(ServiceInterface):
+@authservice
+class AuthService:
+    class Meta:
+        identity = "platform.auth"
 
     @staticmethod
     def get_kwargs_defaults():
