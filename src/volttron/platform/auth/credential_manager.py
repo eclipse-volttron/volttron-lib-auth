@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Optional
+from dataclass_wizard import JSONSerializable
 
-from volttron.types.auth import Credentials, CredentialsStore, CredentialStoreError
+from volttron.types.auth import Credentials, CredentialsStore, CredentialStoreError, IdentityAlreadyExists, IdentityNotFound
+from volttron.decorators import credentials_store, authorizer, authenticator
+from volttron.server.run_server import ServerOptions
 
 
+@credentials_store
 class FileBasedCredentialStore:
     """
     FileBasedCredentialStore
@@ -38,46 +43,81 @@ class FileBasedCredentialStore:
         Stores the given credentials in the credential store.
     """
 
-
-    def __init__(self, credential_store_repository: str | Path):
+    def __init__(self, credentials_store_repository: str | Optional[Path] = None):
         """
         Initializes the FileBasedCredentialStore with the given credential store path.
 
         :param credential_store_repository: The path to the credential store directory.
         """
-        self._credential_store = credential_store_repository
-        if isinstance(self._credential_store, str):
-            self._credential_store = Path(credential_store_repository)
+        if credentials_store_repository is None:
+            opts = ServerOptions()
+            credentials_store_repository = opts.volttron_home / "credential_store"
 
-        if self._credential_store.is_file():
-            raise CredentialStoreError(f"{self._credential_store} is a file, not a directory")
+        self._credentials_repository: Path = credentials_store_repository    # type: ignore
+        if isinstance(self._credentials_repository, str):
+            self._credentials_repository = Path(credentials_store_repository)
 
-        self._credential_store.mkdir(mode=0o700, exist_ok=True)
+        self._credentials_repository.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-    def load(self, *, identity: str) -> Credentials:
+    @property
+    def credentials_repository(self) -> Path:
+        return self._credentials_repository
+
+    def _get_from_file(self, *, identity: str, credentials_type: JSONSerializable = Credentials) -> Credentials:
         """
-        Loads the credentials for the given identity from the credential store.
+        Retrieve credentials from a file stored in the credentials_store_repository.
 
         :param identity: The identity of the credentials to load.
         :return: The loaded credentials.
         :raises CredentialStoreError: If the credentials do not exist.
         """
-        cred_path = self._credential_store.joinpath(f"{identity}.json")
+        cred_path = self._get_credentials_path(identity=identity)
         if not cred_path.exists():
-            raise CredentialStoreError(identity)
-        data = json.loads(cred_path.read_text())
-        creds = Credentials(**data)
-        return creds
+            raise IdentityNotFound(identity)
+        instance = credentials_type.from_json(cred_path.read_text())
+        return instance
 
-    def store(self, *, credentials: Credentials, overwrite: bool = False):
+    def _get_credentials_path(self, *, identity: str) -> Path:
+        return self._credentials_repository / f"{identity}.json"
+
+    def store_credentials(self, *, credentials: Credentials) -> None:
         """
-        Stores the given credentials in the credential store.
+        Store credentials for an identity.
 
+        :param identity: The identity to store credentials for.
+        :type identity: str
         :param credentials: The credentials to store.
-        :param overwrite: Whether to overwrite existing credentials.
-        :raises CredentialStoreError: If the credentials already exist and overwrite is False.
+        :type credentials: Credentials
+        :raises: IdentityAlreadyExists: If the identity alredy exists, an IdentityAlreadyExists exception MUST be raised.
         """
-        cred_path = self._credential_store.joinpath(credentials.identity)
-        if cred_path.exists() and not overwrite:
-            raise CredentialStoreError(credentials.identity)
-        self._credential_store.joinpath(f"{credentials.identity}.json").write_text(json.dumps(credentials.__dict__))
+        path = self._get_credentials_path(identity=credentials.identity)
+        if path.exists():
+            raise IdentityAlreadyExists(credentials.identity)
+        path.open("wt").write(credentials.to_json())
+
+    def retrieve_credentials(self, *, identity: str, credentials_type: type = Credentials) -> Credentials:
+        """
+        Retrieve the credentials for an identity.
+
+        :param identity: The identity to retrieve credentials for.
+        :type identity: str
+        :param credentials_type: Type of credentials the system should return
+        :type credentials_type: type
+        :return: The stored credentials.
+        :rtype: Credentials
+        :raises: IdentityNotFound: If the identity does not exist, an IdentityNotFound exception MUST be raised.
+        """
+        return self._get_from_file(identity=identity, credentials_type=credentials_type)
+
+    def delete_credentials(self, *, identity: str) -> None:
+        """
+        Delete the credentials for an identity.
+
+        :param identity: The identity to delete credentials for.
+        :type identity: str
+        :raises: IdentityNotFound: If the identity does not exist, an IdentityNotFound exception MUST be raised.
+        """
+        path = self._get_credentials_path(identity=identity)
+        if not path.exists():
+            raise IdentityNotFound(identity)
+        path.unlink()

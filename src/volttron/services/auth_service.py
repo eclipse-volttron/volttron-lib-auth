@@ -37,10 +37,7 @@
 # }}}
 from __future__ import annotations
 
-__all__ = [
-    "AuthService", "AuthFile", "AuthEntry", "AuthFileEntryAlreadyExists", "AuthFileIndexError",
-    "AuthException"
-]
+__all__ = ["AuthService", "AuthFile", "AuthEntry", "AuthFileEntryAlreadyExists", "AuthFileIndexError", "AuthException"]
 
 import bisect
 import logging
@@ -58,8 +55,11 @@ import gevent.core
 from gevent import Greenlet
 from gevent.fileobject import FileObject
 
-from volttron.decorators import authservice
-from volttron.types.auth import Credentials
+from volttron.decorators import authservice, authorizer, authenticator
+from volttron.types import AgentContext, AgentOptions
+from volttron.types.auth import (Credentials, CredentialsStore, Authenticator, Authorizer, CredentialsManager,
+                                 AuthorizationManager)
+from volttron.server.run_server import ServerOptions
 from volttron.utils import (
     ClientContext as cc,
     create_file_if_missing,
@@ -67,9 +67,10 @@ from volttron.utils import (
 )
 from volttron.utils import jsonapi
 from volttron.utils.filewatch import watch_file
-from volttron.utils.certs import Certs
+#from volttron.utils.certs import Certs
 # from volttron.utils.keystore import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
-from volttron.client.vip.agent import RPC, VIPError  # , # Core, RPC, VIPError
+#from volttron.client.vip.agent import RPC, VIPError  # , # Core, RPC, VIPError
+from volttron.client.vip.agent import Agent
 from volttron.client.known_identities import (
     VOLTTRON_CENTRAL_PLATFORM,
     CONTROL,
@@ -115,10 +116,153 @@ class AuthException(Exception):
     pass
 
 
+@authorizer
+class AuthFileAuthorization:
+
+    def __init__(*, credentials_rules_map: any, **kwargs):
+        ...
+
+    def is_authorized(*, role: str, action: str, resource: any, **kwargs) -> bool:
+        ...
+
+
+@authenticator
+class AuthFileAuthentication:
+
+    def __init__(*, credentials_store: CredentialsStore, **kwargs):
+        ...
+
+    def authenticate(*, credentials: Credentials) -> bool:
+        ...
+
+
 @authservice
-class AuthService:
+class AuthService(Agent):
+
+    _instance: AuthService = None    # type: ignore
+
     class Meta:
         identity = "platform.auth"
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = object.__new__(cls)
+        return cls._instance
+
+    def __init__(self,
+                 *,
+                 credentials_store: CredentialsStore,
+                 authorizer: Authorizer,
+                 authenticator: Authenticator,
+                 auth_rule_creator: AuthorizationManager,
+                 credential_creator: CredentialsManager,
+                 server_options=ServerOptions):
+
+        self._store = credentials_store
+        self._authorizer = authorizer
+        self._authenticator = authenticator
+        self._auth_rules_creator = auth_rule_creator
+        self._credial_creator = credential_creator
+        self._crediantial_store = credentials_store
+        self._server_options = server_options
+
+        # Initialize the auth service internal state from the different pieces
+        # Including setting up of credentials for the required services for the
+        # platform to run correctly.
+        self._initialize()
+
+        self._load_auth_file()
+
+        try:
+            agent_credentials = credentials_store.retrieve_credentials(identity=self.Meta.identity)
+        except IdentityNotFound:
+            _log.info("Initializing credential store with ")
+        if agent_credentials is None:
+            agent_credentials = credential_creator.create(identity=self.Meta.identity)
+            credentials_store.store_credentials(agent_credentials)
+
+        agent_options = AgentOptions(volttron_home=server_options.volttron_home)
+        # We need to create an agent_options class from the server options so that we can start
+        # the agent.
+        agent_context = AgentContext(address=server_options.address,
+                                     credentials=agent_credentials,
+                                     agent_options=agent_options)
+
+        super().__init__(identity=self.Meta.identity, credentials=agent_credentials, options=agent_options)
+
+        # This agent is started before the router, so we need
+        # to keep it from blocking.
+        self.core.delay_running_event_set = False
+        self._store = credentials_store
+        self._authorizer = authorizer
+        self._authenticator = authenticator
+        self._credial_creator = credential_creator
+
+        # self.auth_file_path = Path(auth_file)
+        # self.auth_file = AuthFile(auth_file)
+        # self.aip = server_config.aip
+        #self.auth_entries: List[AuthEntry] = []
+        self._is_connected = False
+        #self._protected_topics_file_path = Path(protected_topics_file)
+        #self._protected_topics_file = protected_topics_file
+        #self._protected_topics_for_rmq = ProtectedPubSubTopics()
+        # self._setup_mode = server_config.opts.setup_mode
+        self._auth_pending = []
+        self._auth_denied = []
+        self._auth_approved = []
+
+        #self._messagebus: Optional[MessageBusInterface] = None
+
+        def topics():
+            return defaultdict(set)
+
+        self._user_to_permissions = topics()
+
+        self._watch_file_greenlets: List[Greenlet] = []
+
+    @staticmethod
+    def get_auth_type(self) -> str:
+        ...
+
+    def is_authorized(self, credentials: Credentials, action: str, resource: str) -> bool:
+        ...
+
+    def is_authorized(self, credentials: Credentials, action: str, resource: str) -> bool:
+        ...
+
+    def register_credentials(self, credentials: Credentials):
+        ...
+
+    def is_credentials(self, identity: str) -> bool:
+        ...
+
+    def add_role(self, role: str) -> None:
+        ...
+
+    def remove_role(self, role: str) -> None:
+        ...
+
+    def is_role(self, role: str) -> bool:
+        ...
+
+    def add_credential_to_role(self, credential: Credentials, group: str) -> None:
+        ...
+
+    def remove_credential_from_role(self, credential: Credentials, group: str) -> None:
+        ...
+
+    def add_capability(self,
+                       name: str,
+                       value: str | list | dict,
+                       role: str = None,
+                       credential: Credentials = None) -> None:
+        ...
+
+    def is_capability(self, name: str):
+        ...
+
+    def remove_capability(self, name: str, role: str, credential: Credentials = None) -> None:
+        ...
 
     @staticmethod
     def get_kwargs_defaults():
@@ -128,46 +272,20 @@ class AuthService:
         }
         return kwargs
 
-    def __init__(self, auth_file: str, protected_topics_file: str, **kwargs):
-
-        self.allow_any = kwargs.pop("allow_any", False)
-
-        super().__init__(**kwargs)
-
-        # This agent is started before the router, so we need
-        # to keep it from blocking.
-        self.core.delay_running_event_set = False
-        self.auth_file_path = Path(auth_file)
-        self.auth_file = AuthFile(auth_file)
-        # self.aip = server_config.aip
-        self.auth_entries: List[AuthEntry] = []
-        self._is_connected = False
-        self._protected_topics_file_path = Path(protected_topics_file)
-        self._protected_topics_file = protected_topics_file
-        self._protected_topics_for_rmq = ProtectedPubSubTopics()
-        # self._setup_mode = server_config.opts.setup_mode
-        self._auth_pending = []
-        self._auth_denied = []
-        self._auth_approved = []
-        self._messagebus: Optional[MessageBusInterface] = None
-
-        def topics():
-            return defaultdict(set)
-
-        self._user_to_permissions = topics()
-
-        self._watch_file_greenlets: List[Greenlet] = []
-
     def set_messagebus(self, value: MessageBusInterface):
         if self._messagebus is not None:
             raise ValueError("Message bus was already set.")
         self._messagebus = value
 
+    def _initialize(self):
+        pass
+
     def initialize(self, server_credential: Credentials, service_credential: Credentials):
         self.read_auth_file()
         if not len(self.auth_entries):
             for cred in server_credential, service_credential:
-                entry = AuthEntry(credentials=cred.credentials, mechanism=cred.type,
+                entry = AuthEntry(credentials=cred.credentials,
+                                  mechanism=cred.type,
                                   user_id=cred.identity,
                                   capabilities=[
                                       {
@@ -183,8 +301,6 @@ class AuthService:
             value = filter(lambda entry: entry.credentials == server_credential.credentials, self.auth_entries)
             if not value:
                 raise ValueError("Credentials were not found for base server.")
-
-
 
     # @Core.receiver("onsetup")
     # def setup_zap(self, sender, **kwargs):
@@ -244,11 +360,9 @@ class AuthService:
         _log.info("auth file %s loaded", self.auth_file_path)
 
     def start_watch_files(self):
+        self._watch_file_greenlets.append(gevent.spawn(watch_file, self.auth_file_path, self.read_auth_file))
         self._watch_file_greenlets.append(
-            gevent.spawn(watch_file, self.auth_file_path, self.read_auth_file))
-        self._watch_file_greenlets.append(
-            gevent.spawn(watch_file, self._protected_topics_file_path, self._read_protected_topics_file)
-        )
+            gevent.spawn(watch_file, self._protected_topics_file_path, self._read_protected_topics_file))
 
     def stop_watch_files(self):
         pass
@@ -469,556 +583,556 @@ class AuthService:
         if self.allow_any:
             return dump_user(domain, address, mechanism, *credentials[:1])
 
-    @RPC.export
-    def get_user_to_capabilities(self):
-        """RPC method
-
-        Gets a mapping of all users to their capabiliites.
-
-        :returns: mapping of users to capabilities
-        :rtype: dict
-        """
-        user_to_caps = {}
-        for entry in self.auth_entries:
-            user_to_caps[entry.user_id] = entry.capabilities
-        return user_to_caps
-
-    @RPC.export
-    def get_authorizations(self, user_id):
-        """RPC method
-
-        Gets capabilities, groups, and roles for a given user.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol
-        :type user_id: str
-        :returns: tuple of capabiliy-list, group-list, role-list
-        :rtype: tuple
-        """
-        use_parts = True
-        try:
-            domain, address, mechanism, credentials = load_user(user_id)
-        except ValueError:
-            use_parts = False
-        for entry in self.auth_entries:
-            if entry.user_id == user_id:
-                return [entry.capabilities, entry.groups, entry.roles]
-            elif use_parts:
-                if entry.match(domain, address, mechanism, [credentials]):
-                    return entry.capabilities, entry.groups, entry.roles
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def approve_authorization_failure(self, user_id):
-        """RPC method
-
-        Approves a pending CSR or server_credential, based on provided identity.
-        The approved CSR or server_credential can be deleted or denied later.
-        An approved server_credential is stored in the allow list in auth.json.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol or common name for CSR
-        :type user_id: str
-        """
-
-        val_err = None
-        if self._certs:
-            # Will fail with ValueError when a zmq server_credential user_id is passed.
-            try:
-                self._certs.approve_csr(user_id)
-                permissions = self.core.rmq_mgmt.get_default_permissions(user_id)
-
-                if (
-                        "federation" in user_id
-                ):    # federation needs more than the current default permissions # TODO: Fix authorization in rabbitmq
-                    permissions = dict(configure=".*", read=".*", write=".*")
-                self.core.rmq_mgmt.create_user_with_permissions(user_id, permissions, True)
-                _log.debug("Created cert and permissions for user: {}".format(user_id))
-            # Stores error message in case it is caused by an unexpected failure
-            except ValueError as e:
-                val_err = e
-        index = 0
-        matched_index = -1
-        for pending in self._auth_pending:
-            if user_id == pending["user_id"]:
-                self._update_auth_entry(
-                    pending["domain"],
-                    pending["address"],
-                    pending["mechanism"],
-                    pending["credentials"],
-                    pending["user_id"],
-                )
-                matched_index = index
-                val_err = None
-                break
-            index = index + 1
-        if matched_index >= 0:
-            del self._auth_pending[matched_index]
-
-        for pending in self._auth_denied:
-            if user_id == pending["user_id"]:
-                self._update_auth_entry(
-                    pending["domain"],
-                    pending["address"],
-                    pending["mechanism"],
-                    pending["credentials"],
-                    pending["user_id"],
-                )
-                self._remove_auth_entry(pending["credentials"], is_allow=False)
-                val_err = None
-        # If the user_id supplied was not for a ZMQ server_credential, and the pending_csr check failed,
-        # output the ValueError message to the error log.
-        if val_err:
-            _log.error(f"{val_err}")
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def deny_authorization_failure(self, user_id):
-        """RPC method
-
-        Denies a pending CSR or server_credential, based on provided identity.
-        The denied CSR or server_credential can be deleted or accepted later.
-        A denied server_credential is stored in the deny list in auth.json.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol or common name for CSR
-        :type user_id: str
-        """
-
-        val_err = None
-        if self._certs:
-            # Will fail with ValueError when a zmq server_credential user_id is passed.
-            try:
-                self._certs.deny_csr(user_id)
-                _log.debug("Denied cert for user: {}".format(user_id))
-            # Stores error message in case it is caused by an unexpected failure
-            except ValueError as e:
-                val_err = e
-
-        index = 0
-        matched_index = -1
-        for pending in self._auth_pending:
-            if user_id == pending["user_id"]:
-                self._update_auth_entry(
-                    pending["domain"],
-                    pending["address"],
-                    pending["mechanism"],
-                    pending["credentials"],
-                    pending["user_id"],
-                    is_allow=False,
-                )
-                matched_index = index
-                val_err = None
-                break
-            index = index + 1
-        if matched_index >= 0:
-            del self._auth_pending[matched_index]
-
-        for pending in self._auth_approved:
-            if user_id == pending["user_id"]:
-                self._update_auth_entry(
-                    pending["domain"],
-                    pending["address"],
-                    pending["mechanism"],
-                    pending["credentials"],
-                    pending["user_id"],
-                    is_allow=False,
-                )
-                self._remove_auth_entry(pending["credentials"])
-                val_err = None
-        # If the user_id supplied was not for a ZMQ server_credential, and the pending_csr check failed,
-        # output the ValueError message to the error log.
-        if val_err:
-            _log.error(f"{val_err}")
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def delete_authorization_failure(self, user_id):
-        """RPC method
-
-        Deletes a pending CSR or server_credential, based on provided identity.
-        To approve or deny a deleted pending CSR or server_credential,
-        the request must be resent by the remote platform or agent.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol or common name for CSR
-        :type user_id: str
-        """
-
-        val_err = None
-        if self._certs:
-            # Will fail with ValueError when a zmq server_credential user_id is passed.
-            try:
-                self._certs.delete_csr(user_id)
-                _log.debug("Denied cert for user: {}".format(user_id))
-            # Stores error message in case it is caused by an unexpected failure
-            except ValueError as e:
-                val_err = e
-
-        index = 0
-        matched_index = -1
-        for pending in self._auth_pending:
-            if user_id == pending["user_id"]:
-                self._update_auth_entry(
-                    pending["domain"],
-                    pending["address"],
-                    pending["mechanism"],
-                    pending["credentials"],
-                    pending["user_id"],
-                )
-                matched_index = index
-                val_err = None
-                break
-            index = index + 1
-        if matched_index >= 0:
-            del self._auth_pending[matched_index]
-
-        index = 0
-        matched_index = -1
-        for pending in self._auth_pending:
-            if user_id == pending["user_id"]:
-                matched_index = index
-                val_err = None
-                break
-            index = index + 1
-        if matched_index >= 0:
-            del self._auth_pending[matched_index]
-
-        for pending in self._auth_approved:
-            if user_id == pending["user_id"]:
-                self._remove_auth_entry(pending["credentials"])
-                val_err = None
-
-        for pending in self._auth_denied:
-            if user_id == pending["user_id"]:
-                self._remove_auth_entry(pending["credentials"], is_allow=False)
-                val_err = None
-
-        # If the user_id supplied was not for a ZMQ server_credential, and the pending_csr check failed,
-        # output the ValueError message to the error log.
-        if val_err:
-            _log.error(f"{val_err}")
-
-    @RPC.export
-    def get_authorization_pending(self):
-        """RPC method
-
-        Returns a list of failed (pending) ZMQ credentials.
-
-        :rtype: list
-        """
-        return list(self._auth_pending)
-
-    @RPC.export
-    def get_authorization_approved(self):
-        """RPC method
-
-        Returns a list of approved ZMQ credentials.
-        This list is updated whenever the auth file is read.
-        It includes all allow entries from the auth file that contain a populated address field.
-
-        :rtype: list
-        """
-        return list(self._auth_approved)
-
-    @RPC.export
-    def get_authorization_denied(self):
-        """RPC method
-
-        Returns a list of denied ZMQ credentials.
-        This list is updated whenever the auth file is read.
-        It includes all deny entries from the auth file that contain a populated address field.
-
-        :rtype: list
-        """
-        return list(self._auth_denied)
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def get_pending_csrs(self):
-        """RPC method
-
-        Returns a list of pending CSRs.
-        This method provides RPC access to the Certs class's get_pending_csr_requests method.
-        This method is only applicable for web-enabled, RMQ instances.
-
-        :rtype: list
-        """
-        if self._certs:
-            csrs = [c for c in self._certs.get_pending_csr_requests()]
-            return csrs
-        else:
-            return []
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def get_pending_csr_status(self, common_name):
-        """RPC method
-
-        Returns the status of a pending CSRs.
-        This method provides RPC access to the Certs class's get_csr_status method.
-        This method is only applicable for web-enabled, RMQ instances.
-        Currently, this method is only used by admin_endpoints.
-
-        :param common_name: Common name for CSR
-        :type common_name: str
-        :rtype: str
-        """
-        if self._certs:
-            return self._certs.get_csr_status(common_name)
-        else:
-            return ""
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def get_pending_csr_cert(self, common_name):
-        """RPC method
-
-        Returns the cert of a pending CSRs.
-        This method provides RPC access to the Certs class's get_cert_from_csr method.
-        This method is only applicable for web-enabled, RMQ instances.
-        Currently, this method is only used by admin_endpoints.
-
-        :param common_name: Common name for CSR
-        :type common_name: str
-        :rtype: str
-        """
-        if self._certs:
-            return self._certs.get_cert_from_csr(common_name).decode("utf-8")
-        else:
-            return ""
-
-    @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
-    def get_all_pending_csr_subjects(self):
-        """RPC method
-
-        Returns a list of all certs subjects.
-        This method provides RPC access to the Certs class's get_all_cert_subjects method.
-        This method is only applicable for web-enabled, RMQ instances.
-        Currently, this method is only used by admin_endpoints.
-
-        :rtype: list
-        """
-        if self._certs:
-            return self._certs.get_all_cert_subjects()
-        else:
-            return []
-
-    def _get_authorizations(self, user_id, index):
-        """Convenience method for getting authorization component by index"""
-        auths = self.get_authorizations(user_id)
-        if auths:
-            return auths[index]
-        return []
-
-    @RPC.export
-    def get_capabilities(self, user_id):
-        """RPC method
-
-        Gets capabilities for a given user.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol
-        :type user_id: str
-        :returns: list of capabilities
-        :rtype: list
-        """
-        return self._get_authorizations(user_id, 0)
-
-    @RPC.export
-    def get_groups(self, user_id):
-        """RPC method
-
-        Gets groups for a given user.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol
-        :type user_id: str
-        :returns: list of groups
-        :rtype: list
-        """
-        return self._get_authorizations(user_id, 1)
-
-    @RPC.export
-    def get_roles(self, user_id):
-        """RPC method
-
-        Gets roles for a given user.
-
-        :param user_id: user id field from VOLTTRON Interconnect Protocol
-        :type user_id: str
-        :returns: list of roles
-        :rtype: list
-        """
-        return self._get_authorizations(user_id, 2)
-
-    def _update_auth_entry(self, domain, address, mechanism, credential, user_id, is_allow=True):
-        # Make a new entry
-        fields = {
-            "domain": domain,
-            "address": address,
-            "mechanism": mechanism,
-            "credentials": credential,
-            "user_id": user_id,
-            "groups": "",
-            "roles": "",
-            "capabilities": "",
-            "comments": "Auth entry added in setup mode",
-        }
-        new_entry = AuthEntry(**fields)
-
-        try:
-            self.auth_file.add(new_entry, overwrite=False, is_allow=is_allow)
-        except AuthException as err:
-            _log.error("ERROR: %s\n" % str(err))
-
-    def _remove_auth_entry(self, credential, is_allow=True):
-        try:
-            self.auth_file.remove_by_credentials(credential, is_allow=is_allow)
-        except AuthException as err:
-            _log.error("ERROR: %s\n" % str(err))
-
-    def _update_auth_pending(self, domain, address, mechanism, credential, user_id):
-        for entry in self._auth_denied:
-            # Check if failure entry has been denied. If so, increment the failure's denied count
-            if ((entry["domain"] == domain) and (entry["address"] == address)
-                    and (entry["mechanism"] == mechanism)
-                    and (entry["credentials"] == credential)):
-                entry["retries"] += 1
-                return
-
-        for entry in self._auth_pending:
-            # Check if failure entry exists. If so, increment the failure count
-            if ((entry["domain"] == domain) and (entry["address"] == address)
-                    and (entry["mechanism"] == mechanism)
-                    and (entry["credentials"] == credential)):
-                entry["retries"] += 1
-                return
-        # Add a new failure entry
-        fields = {
-            "domain": domain,
-            "address": address,
-            "mechanism": mechanism,
-            "credentials": credential,
-            "user_id": user_id,
-            "retries": 1,
-        }
-        self._auth_pending.append(dict(fields))
-        return
-
-    def _load_protected_topics_for_rmq(self):
-        try:
-            write_protect = self._protected_topics["write-protect"]
-        except KeyError:
-            write_protect = []
-
-        topics = ProtectedPubSubTopics()
-        try:
-            for entry in write_protect:
-                topics.add(entry["topic"], entry["capabilities"])
-        except KeyError:
-            _log.exception("invalid format for protected topics ")
-        else:
-            self._protected_topics_for_rmq = topics
-
-    def _check_topic_rules(self, sender, **kwargs):
-        delay = 0.05
-        self.core.spawn_later(delay, self._check_rmq_topic_permissions)
-
-    def _check_rmq_topic_permissions(self):
-        """
-        Go through the topic permissions for each agent based on the protected topic setting.
-        Update the permissions for the agent/user based on the latest configuration
-        :return:
-        """
-        return
-        # Get agent to capabilities mapping
-        user_to_caps = self.get_user_to_capabilities()
-        # Get topics to capabilities mapping
-        topic_to_caps = self._protected_topics_for_rmq.get_topic_caps()    # topic to caps
-
-        peers = self.vip.peerlist().get(timeout=5)
-        # _log.debug("USER TO CAPS: {0}, TOPICS TO CAPS: {1}, {2}".format(user_to_caps,
-        #                                                                 topic_to_caps,
-        #                                                                 self._user_to_permissions))
-        if not user_to_caps or not topic_to_caps:
-            # clear all old permission rules
-            for peer in peers:
-                self._user_to_permissions[peer].clear()
-        else:
-            for topic, caps_for_topic in topic_to_caps.items():
-                for user in user_to_caps:
-                    try:
-                        caps_for_user = user_to_caps[user]
-                        common_caps = list(set(caps_for_user).intersection(caps_for_topic))
-                        if common_caps:
-                            self._user_to_permissions[user].add(topic)
-                        else:
-                            try:
-                                self._user_to_permissions[user].remove(topic)
-                            except KeyError as e:
-                                if not self._user_to_permissions[user]:
-                                    self._user_to_permissions[user] = set()
-                    except KeyError as e:
-                        try:
-                            self._user_to_permissions[user].remove(topic)
-                        except KeyError as e:
-                            if not self._user_to_permissions[user]:
-                                self._user_to_permissions[user] = set()
-
-        all = set()
-        for user in user_to_caps:
-            all.update(self._user_to_permissions[user])
-
-        # Set topic permissions now
-        for peer in peers:
-            not_allowed = all.difference(self._user_to_permissions[peer])
-            self._update_topic_permission_tokens(peer, not_allowed)
-
-    def _update_topic_permission_tokens(self, identity, not_allowed):
-        """
-        Make rules for read and write permission on topic (routing key)
-        for an agent based on protected topics setting
-        :param identity: identity of the agent
-        :return:
-        """
-        read_tokens = [
-            "{instance}.{identity}".format(instance=self.core.instance_name, identity=identity),
-            "__pubsub__.*",
-        ]
-        write_tokens = ["{instance}.*".format(instance=self.core.instance_name, identity=identity)]
-
-        if not not_allowed:
-            write_tokens.append("__pubsub__.{instance}.*".format(instance=self.core.instance_name))
-        else:
-            not_allowed_string = "|".join(not_allowed)
-            write_tokens.append("__pubsub__.{instance}.".format(instance=self.core.instance_name) +
-                                "^(!({not_allow})).*$".format(not_allow=not_allowed_string))
-        current = self.core.rmq_mgmt.get_topic_permissions_for_user(identity)
-        # _log.debug("CURRENT for identity: {0}, {1}".format(identity, current))
-        if current and isinstance(current, list):
-            current = current[0]
-            dift = False
-            read_allowed_str = "|".join(read_tokens)
-            write_allowed_str = "|".join(write_tokens)
-            if re.search(current["read"], read_allowed_str):
-                dift = True
-                current["read"] = read_allowed_str
-            if re.search(current["write"], write_allowed_str):
-                dift = True
-                current["write"] = write_allowed_str
-                # _log.debug("NEW {0}, DIFF: {1} ".format(current, dift))
-                # if dift:
-                #     set_topic_permissions_for_user(current, identity)
-        else:
-            current = dict()
-            current["exchange"] = "volttron"
-            current["read"] = "|".join(read_tokens)
-            current["write"] = "|".join(write_tokens)
-            # _log.debug("NEW {0}, New string ".format(current))
-            # set_topic_permissions_for_user(current, identity)
-
-    def _check_token(self, actual, allowed):
-        pending = actual[:]
-        for tk in actual:
-            if tk in allowed:
-                pending.remove(tk)
-        return pending
+    # @RPC.export
+    # def get_user_to_capabilities(self):
+    #     """RPC method
+
+    #     Gets a mapping of all users to their capabiliites.
+
+    #     :returns: mapping of users to capabilities
+    #     :rtype: dict
+    #     """
+    #     user_to_caps = {}
+    #     for entry in self.auth_entries:
+    #         user_to_caps[entry.user_id] = entry.capabilities
+    #     return user_to_caps
+
+    # @RPC.export
+    # def get_authorizations(self, user_id):
+    #     """RPC method
+
+    #     Gets capabilities, groups, and roles for a given user.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol
+    #     :type user_id: str
+    #     :returns: tuple of capabiliy-list, group-list, role-list
+    #     :rtype: tuple
+    #     """
+    #     use_parts = True
+    #     try:
+    #         domain, address, mechanism, credentials = load_user(user_id)
+    #     except ValueError:
+    #         use_parts = False
+    #     for entry in self.auth_entries:
+    #         if entry.user_id == user_id:
+    #             return [entry.capabilities, entry.groups, entry.roles]
+    #         elif use_parts:
+    #             if entry.match(domain, address, mechanism, [credentials]):
+    #                 return entry.capabilities, entry.groups, entry.roles
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def approve_authorization_failure(self, user_id):
+    #     """RPC method
+
+    #     Approves a pending CSR or server_credential, based on provided identity.
+    #     The approved CSR or server_credential can be deleted or denied later.
+    #     An approved server_credential is stored in the allow list in auth.json.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol or common name for CSR
+    #     :type user_id: str
+    #     """
+
+    #     val_err = None
+    #     if self._certs:
+    #         # Will fail with ValueError when a zmq server_credential user_id is passed.
+    #         try:
+    #             self._certs.approve_csr(user_id)
+    #             permissions = self.core.rmq_mgmt.get_default_permissions(user_id)
+
+    #             if (
+    #                     "federation" in user_id
+    #             ):    # federation needs more than the current default permissions # TODO: Fix authorization in rabbitmq
+    #                 permissions = dict(configure=".*", read=".*", write=".*")
+    #             self.core.rmq_mgmt.create_user_with_permissions(user_id, permissions, True)
+    #             _log.debug("Created cert and permissions for user: {}".format(user_id))
+    #         # Stores error message in case it is caused by an unexpected failure
+    #         except ValueError as e:
+    #             val_err = e
+    #     index = 0
+    #     matched_index = -1
+    #     for pending in self._auth_pending:
+    #         if user_id == pending["user_id"]:
+    #             self._update_auth_entry(
+    #                 pending["domain"],
+    #                 pending["address"],
+    #                 pending["mechanism"],
+    #                 pending["credentials"],
+    #                 pending["user_id"],
+    #             )
+    #             matched_index = index
+    #             val_err = None
+    #             break
+    #         index = index + 1
+    #     if matched_index >= 0:
+    #         del self._auth_pending[matched_index]
+
+    #     for pending in self._auth_denied:
+    #         if user_id == pending["user_id"]:
+    #             self._update_auth_entry(
+    #                 pending["domain"],
+    #                 pending["address"],
+    #                 pending["mechanism"],
+    #                 pending["credentials"],
+    #                 pending["user_id"],
+    #             )
+    #             self._remove_auth_entry(pending["credentials"], is_allow=False)
+    #             val_err = None
+    #     # If the user_id supplied was not for a ZMQ server_credential, and the pending_csr check failed,
+    #     # output the ValueError message to the error log.
+    #     if val_err:
+    #         _log.error(f"{val_err}")
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def deny_authorization_failure(self, user_id):
+    #     """RPC method
+
+    #     Denies a pending CSR or server_credential, based on provided identity.
+    #     The denied CSR or server_credential can be deleted or accepted later.
+    #     A denied server_credential is stored in the deny list in auth.json.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol or common name for CSR
+    #     :type user_id: str
+    #     """
+
+    #     val_err = None
+    #     if self._certs:
+    #         # Will fail with ValueError when a zmq server_credential user_id is passed.
+    #         try:
+    #             self._certs.deny_csr(user_id)
+    #             _log.debug("Denied cert for user: {}".format(user_id))
+    #         # Stores error message in case it is caused by an unexpected failure
+    #         except ValueError as e:
+    #             val_err = e
+
+    #     index = 0
+    #     matched_index = -1
+    #     for pending in self._auth_pending:
+    #         if user_id == pending["user_id"]:
+    #             self._update_auth_entry(
+    #                 pending["domain"],
+    #                 pending["address"],
+    #                 pending["mechanism"],
+    #                 pending["credentials"],
+    #                 pending["user_id"],
+    #                 is_allow=False,
+    #             )
+    #             matched_index = index
+    #             val_err = None
+    #             break
+    #         index = index + 1
+    #     if matched_index >= 0:
+    #         del self._auth_pending[matched_index]
+
+    #     for pending in self._auth_approved:
+    #         if user_id == pending["user_id"]:
+    #             self._update_auth_entry(
+    #                 pending["domain"],
+    #                 pending["address"],
+    #                 pending["mechanism"],
+    #                 pending["credentials"],
+    #                 pending["user_id"],
+    #                 is_allow=False,
+    #             )
+    #             self._remove_auth_entry(pending["credentials"])
+    #             val_err = None
+    #     # If the user_id supplied was not for a ZMQ server_credential, and the pending_csr check failed,
+    #     # output the ValueError message to the error log.
+    #     if val_err:
+    #         _log.error(f"{val_err}")
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def delete_authorization_failure(self, user_id):
+    #     """RPC method
+
+    #     Deletes a pending CSR or server_credential, based on provided identity.
+    #     To approve or deny a deleted pending CSR or server_credential,
+    #     the request must be resent by the remote platform or agent.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol or common name for CSR
+    #     :type user_id: str
+    #     """
+
+    #     val_err = None
+    #     if self._certs:
+    #         # Will fail with ValueError when a zmq server_credential user_id is passed.
+    #         try:
+    #             self._certs.delete_csr(user_id)
+    #             _log.debug("Denied cert for user: {}".format(user_id))
+    #         # Stores error message in case it is caused by an unexpected failure
+    #         except ValueError as e:
+    #             val_err = e
+
+    #     index = 0
+    #     matched_index = -1
+    #     for pending in self._auth_pending:
+    #         if user_id == pending["user_id"]:
+    #             self._update_auth_entry(
+    #                 pending["domain"],
+    #                 pending["address"],
+    #                 pending["mechanism"],
+    #                 pending["credentials"],
+    #                 pending["user_id"],
+    #             )
+    #             matched_index = index
+    #             val_err = None
+    #             break
+    #         index = index + 1
+    #     if matched_index >= 0:
+    #         del self._auth_pending[matched_index]
+
+    #     index = 0
+    #     matched_index = -1
+    #     for pending in self._auth_pending:
+    #         if user_id == pending["user_id"]:
+    #             matched_index = index
+    #             val_err = None
+    #             break
+    #         index = index + 1
+    #     if matched_index >= 0:
+    #         del self._auth_pending[matched_index]
+
+    #     for pending in self._auth_approved:
+    #         if user_id == pending["user_id"]:
+    #             self._remove_auth_entry(pending["credentials"])
+    #             val_err = None
+
+    #     for pending in self._auth_denied:
+    #         if user_id == pending["user_id"]:
+    #             self._remove_auth_entry(pending["credentials"], is_allow=False)
+    #             val_err = None
+
+    #     # If the user_id supplied was not for a ZMQ server_credential, and the pending_csr check failed,
+    #     # output the ValueError message to the error log.
+    #     if val_err:
+    #         _log.error(f"{val_err}")
+
+    # @RPC.export
+    # def get_authorization_pending(self):
+    #     """RPC method
+
+    #     Returns a list of failed (pending) ZMQ credentials.
+
+    #     :rtype: list
+    #     """
+    #     return list(self._auth_pending)
+
+    # @RPC.export
+    # def get_authorization_approved(self):
+    #     """RPC method
+
+    #     Returns a list of approved ZMQ credentials.
+    #     This list is updated whenever the auth file is read.
+    #     It includes all allow entries from the auth file that contain a populated address field.
+
+    #     :rtype: list
+    #     """
+    #     return list(self._auth_approved)
+
+    # @RPC.export
+    # def get_authorization_denied(self):
+    #     """RPC method
+
+    #     Returns a list of denied ZMQ credentials.
+    #     This list is updated whenever the auth file is read.
+    #     It includes all deny entries from the auth file that contain a populated address field.
+
+    #     :rtype: list
+    #     """
+    #     return list(self._auth_denied)
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def get_pending_csrs(self):
+    #     """RPC method
+
+    #     Returns a list of pending CSRs.
+    #     This method provides RPC access to the Certs class's get_pending_csr_requests method.
+    #     This method is only applicable for web-enabled, RMQ instances.
+
+    #     :rtype: list
+    #     """
+    #     if self._certs:
+    #         csrs = [c for c in self._certs.get_pending_csr_requests()]
+    #         return csrs
+    #     else:
+    #         return []
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def get_pending_csr_status(self, common_name):
+    #     """RPC method
+
+    #     Returns the status of a pending CSRs.
+    #     This method provides RPC access to the Certs class's get_csr_status method.
+    #     This method is only applicable for web-enabled, RMQ instances.
+    #     Currently, this method is only used by admin_endpoints.
+
+    #     :param common_name: Common name for CSR
+    #     :type common_name: str
+    #     :rtype: str
+    #     """
+    #     if self._certs:
+    #         return self._certs.get_csr_status(common_name)
+    #     else:
+    #         return ""
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def get_pending_csr_cert(self, common_name):
+    #     """RPC method
+
+    #     Returns the cert of a pending CSRs.
+    #     This method provides RPC access to the Certs class's get_cert_from_csr method.
+    #     This method is only applicable for web-enabled, RMQ instances.
+    #     Currently, this method is only used by admin_endpoints.
+
+    #     :param common_name: Common name for CSR
+    #     :type common_name: str
+    #     :rtype: str
+    #     """
+    #     if self._certs:
+    #         return self._certs.get_cert_from_csr(common_name).decode("utf-8")
+    #     else:
+    #         return ""
+
+    # @RPC.export
+    # @RPC.allow(capabilities="allow_auth_modifications")
+    # def get_all_pending_csr_subjects(self):
+    #     """RPC method
+
+    #     Returns a list of all certs subjects.
+    #     This method provides RPC access to the Certs class's get_all_cert_subjects method.
+    #     This method is only applicable for web-enabled, RMQ instances.
+    #     Currently, this method is only used by admin_endpoints.
+
+    #     :rtype: list
+    #     """
+    #     if self._certs:
+    #         return self._certs.get_all_cert_subjects()
+    #     else:
+    #         return []
+
+    # def _get_authorizations(self, user_id, index):
+    #     """Convenience method for getting authorization component by index"""
+    #     auths = self.get_authorizations(user_id)
+    #     if auths:
+    #         return auths[index]
+    #     return []
+
+    # @RPC.export
+    # def get_capabilities(self, user_id):
+    #     """RPC method
+
+    #     Gets capabilities for a given user.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol
+    #     :type user_id: str
+    #     :returns: list of capabilities
+    #     :rtype: list
+    #     """
+    #     return self._get_authorizations(user_id, 0)
+
+    # @RPC.export
+    # def get_groups(self, user_id):
+    #     """RPC method
+
+    #     Gets groups for a given user.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol
+    #     :type user_id: str
+    #     :returns: list of groups
+    #     :rtype: list
+    #     """
+    #     return self._get_authorizations(user_id, 1)
+
+    # @RPC.export
+    # def get_roles(self, user_id):
+    #     """RPC method
+
+    #     Gets roles for a given user.
+
+    #     :param user_id: user id field from VOLTTRON Interconnect Protocol
+    #     :type user_id: str
+    #     :returns: list of roles
+    #     :rtype: list
+    #     """
+    #     return self._get_authorizations(user_id, 2)
+
+    # def _update_auth_entry(self, domain, address, mechanism, credential, user_id, is_allow=True):
+    #     # Make a new entry
+    #     fields = {
+    #         "domain": domain,
+    #         "address": address,
+    #         "mechanism": mechanism,
+    #         "credentials": credential,
+    #         "user_id": user_id,
+    #         "groups": "",
+    #         "roles": "",
+    #         "capabilities": "",
+    #         "comments": "Auth entry added in setup mode",
+    #     }
+    #     new_entry = AuthEntry(**fields)
+
+    #     try:
+    #         self.auth_file.add(new_entry, overwrite=False, is_allow=is_allow)
+    #     except AuthException as err:
+    #         _log.error("ERROR: %s\n" % str(err))
+
+    # def _remove_auth_entry(self, credential, is_allow=True):
+    #     try:
+    #         self.auth_file.remove_by_credentials(credential, is_allow=is_allow)
+    #     except AuthException as err:
+    #         _log.error("ERROR: %s\n" % str(err))
+
+    # def _update_auth_pending(self, domain, address, mechanism, credential, user_id):
+    #     for entry in self._auth_denied:
+    #         # Check if failure entry has been denied. If so, increment the failure's denied count
+    #         if ((entry["domain"] == domain) and (entry["address"] == address)
+    #                 and (entry["mechanism"] == mechanism)
+    #                 and (entry["credentials"] == credential)):
+    #             entry["retries"] += 1
+    #             return
+
+    #     for entry in self._auth_pending:
+    #         # Check if failure entry exists. If so, increment the failure count
+    #         if ((entry["domain"] == domain) and (entry["address"] == address)
+    #                 and (entry["mechanism"] == mechanism)
+    #                 and (entry["credentials"] == credential)):
+    #             entry["retries"] += 1
+    #             return
+    #     # Add a new failure entry
+    #     fields = {
+    #         "domain": domain,
+    #         "address": address,
+    #         "mechanism": mechanism,
+    #         "credentials": credential,
+    #         "user_id": user_id,
+    #         "retries": 1,
+    #     }
+    #     self._auth_pending.append(dict(fields))
+    #     return
+
+    # def _load_protected_topics_for_rmq(self):
+    #     try:
+    #         write_protect = self._protected_topics["write-protect"]
+    #     except KeyError:
+    #         write_protect = []
+
+    #     topics = ProtectedPubSubTopics()
+    #     try:
+    #         for entry in write_protect:
+    #             topics.add(entry["topic"], entry["capabilities"])
+    #     except KeyError:
+    #         _log.exception("invalid format for protected topics ")
+    #     else:
+    #         self._protected_topics_for_rmq = topics
+
+    # def _check_topic_rules(self, sender, **kwargs):
+    #     delay = 0.05
+    #     self.core.spawn_later(delay, self._check_rmq_topic_permissions)
+
+    # def _check_rmq_topic_permissions(self):
+    #     """
+    #     Go through the topic permissions for each agent based on the protected topic setting.
+    #     Update the permissions for the agent/user based on the latest configuration
+    #     :return:
+    #     """
+    #     return
+    #     # Get agent to capabilities mapping
+    #     user_to_caps = self.get_user_to_capabilities()
+    #     # Get topics to capabilities mapping
+    #     topic_to_caps = self._protected_topics_for_rmq.get_topic_caps()    # topic to caps
+
+    #     peers = self.vip.peerlist().get(timeout=5)
+    #     # _log.debug("USER TO CAPS: {0}, TOPICS TO CAPS: {1}, {2}".format(user_to_caps,
+    #     #                                                                 topic_to_caps,
+    #     #                                                                 self._user_to_permissions))
+    #     if not user_to_caps or not topic_to_caps:
+    #         # clear all old permission rules
+    #         for peer in peers:
+    #             self._user_to_permissions[peer].clear()
+    #     else:
+    #         for topic, caps_for_topic in topic_to_caps.items():
+    #             for user in user_to_caps:
+    #                 try:
+    #                     caps_for_user = user_to_caps[user]
+    #                     common_caps = list(set(caps_for_user).intersection(caps_for_topic))
+    #                     if common_caps:
+    #                         self._user_to_permissions[user].add(topic)
+    #                     else:
+    #                         try:
+    #                             self._user_to_permissions[user].remove(topic)
+    #                         except KeyError as e:
+    #                             if not self._user_to_permissions[user]:
+    #                                 self._user_to_permissions[user] = set()
+    #                 except KeyError as e:
+    #                     try:
+    #                         self._user_to_permissions[user].remove(topic)
+    #                     except KeyError as e:
+    #                         if not self._user_to_permissions[user]:
+    #                             self._user_to_permissions[user] = set()
+
+    #     all = set()
+    #     for user in user_to_caps:
+    #         all.update(self._user_to_permissions[user])
+
+    #     # Set topic permissions now
+    #     for peer in peers:
+    #         not_allowed = all.difference(self._user_to_permissions[peer])
+    #         self._update_topic_permission_tokens(peer, not_allowed)
+
+    # def _update_topic_permission_tokens(self, identity, not_allowed):
+    #     """
+    #     Make rules for read and write permission on topic (routing key)
+    #     for an agent based on protected topics setting
+    #     :param identity: identity of the agent
+    #     :return:
+    #     """
+    #     read_tokens = [
+    #         "{instance}.{identity}".format(instance=self.core.instance_name, identity=identity),
+    #         "__pubsub__.*",
+    #     ]
+    #     write_tokens = ["{instance}.*".format(instance=self.core.instance_name, identity=identity)]
+
+    #     if not not_allowed:
+    #         write_tokens.append("__pubsub__.{instance}.*".format(instance=self.core.instance_name))
+    #     else:
+    #         not_allowed_string = "|".join(not_allowed)
+    #         write_tokens.append("__pubsub__.{instance}.".format(instance=self.core.instance_name) +
+    #                             "^(!({not_allow})).*$".format(not_allow=not_allowed_string))
+    #     current = self.core.rmq_mgmt.get_topic_permissions_for_user(identity)
+    #     # _log.debug("CURRENT for identity: {0}, {1}".format(identity, current))
+    #     if current and isinstance(current, list):
+    #         current = current[0]
+    #         dift = False
+    #         read_allowed_str = "|".join(read_tokens)
+    #         write_allowed_str = "|".join(write_tokens)
+    #         if re.search(current["read"], read_allowed_str):
+    #             dift = True
+    #             current["read"] = read_allowed_str
+    #         if re.search(current["write"], write_allowed_str):
+    #             dift = True
+    #             current["write"] = write_allowed_str
+    #             # _log.debug("NEW {0}, DIFF: {1} ".format(current, dift))
+    #             # if dift:
+    #             #     set_topic_permissions_for_user(current, identity)
+    #     else:
+    #         current = dict()
+    #         current["exchange"] = "volttron"
+    #         current["read"] = "|".join(read_tokens)
+    #         current["write"] = "|".join(write_tokens)
+    #         # _log.debug("NEW {0}, New string ".format(current))
+    #         # set_topic_permissions_for_user(current, identity)
+
+    # def _check_token(self, actual, allowed):
+    #     pending = actual[:]
+    #     for tk in actual:
+    #         if tk in allowed:
+    #             pending.remove(tk)
+    #     return pending
 
 
 class String(str):
@@ -1146,11 +1260,10 @@ class AuthEntry(object):
 
     @staticmethod
     def _get_capability(value):
-        err_message = (
-            "Invalid capability value: {} of type {}. Capability entries can only be a string or "
-            "dictionary or list containing string/dictionary. "
-            "dictionaries should be of the format {'capability_name':None} or "
-            "{'capability_name':{'arg1':'value',...}")
+        err_message = ("Invalid capability value: {} of type {}. Capability entries can only be a string or "
+                       "dictionary or list containing string/dictionary. "
+                       "dictionaries should be of the format {'capability_name':None} or "
+                       "{'capability_name':{'arg1':'value',...}")
         if isinstance(value, str):
             return {value: None}
         elif isinstance(value, dict):
@@ -1165,10 +1278,8 @@ class AuthEntry(object):
 
     def match(self, domain, address, mechanism, credentials):
         return ((self.domain is None or self.domain.match(domain))
-                and (self.address is None or self.address.match(address))
-                and self.mechanism == mechanism
-                and (self.mechanism == "NULL" or
-                     (len(self.credentials) > 0 and self.credentials.match(credentials[0]))))
+                and (self.address is None or self.address.match(address)) and self.mechanism == mechanism and
+                (self.mechanism == "NULL" or (len(self.credentials) > 0 and self.credentials.match(credentials[0]))))
 
     def __str__(self):
         return ("domain={0.domain!r}, address={0.address!r}, "
@@ -1186,8 +1297,7 @@ class AuthEntry(object):
         if mechanism == "NULL":
             return
         if cred is None:
-            raise AuthEntryInvalid(
-                "credentials parameter is required for mechanism {}".format(mechanism))
+            raise AuthEntryInvalid("credentials parameter is required for mechanism {}".format(mechanism))
         if isregex(cred):
             return
         # TODO Determine how a validator for entries would work here.
@@ -1381,15 +1491,9 @@ class AuthFile(object):
         """
 
         if is_allow:
-            return [
-                entry for entry in self.read_allow_entries()
-                if str(entry.credentials) == credentials
-            ]
+            return [entry for entry in self.read_allow_entries() if str(entry.credentials) == credentials]
         else:
-            return [
-                entry for entry in self.read_deny_entries()
-                if str(entry.credentials) == credentials
-            ]
+            return [entry for entry in self.read_deny_entries() if str(entry.credentials) == credentials]
 
     def _get_entries(self, allow_list, deny_list):
         allow_entries = []
@@ -1448,8 +1552,7 @@ class AuthFile(object):
                 # Compare AuthEntry objects component-wise, rather than
                 # using match, because match will evaluate regex.
                 if (prev_entry.domain == entry.domain and prev_entry.address == entry.address
-                        and prev_entry.mechanism == entry.mechanism
-                        and prev_entry.credentials == entry.credentials):
+                        and prev_entry.mechanism == entry.mechanism and prev_entry.credentials == entry.credentials):
                     raise AuthFileEntryAlreadyExists([index])
         else:
             for index, prev_entry in enumerate(self.read_deny_entries()):
@@ -1459,8 +1562,7 @@ class AuthFile(object):
                 # Compare AuthEntry objects component-wise, rather than
                 # using match, because match will evaluate regex.
                 if (prev_entry.domain == entry.domain and prev_entry.address == entry.address
-                        and prev_entry.mechanism == entry.mechanism
-                        and prev_entry.credentials == entry.credentials):
+                        and prev_entry.mechanism == entry.mechanism and prev_entry.credentials == entry.credentials):
                     raise AuthFileEntryAlreadyExists([index])
 
     def _update_by_indices(self, auth_entry, indices, is_allow=True):
