@@ -1,29 +1,15 @@
 import json
 import os
 from pathlib import Path
-import shutil
-import tempfile
-import mock
 import pytest
-from volttron.types.auth import Credentials, PKICredentials, PublicCredentials
 
+from volttron_testutils import make_volttron_home_func_scope
+from volttron.types.auth import Credentials, PKICredentials, PublicCredentials
 from volttron.platform.auth import FileBasedCredentialStore
 
 
-@pytest.fixture(autouse=True)
-def mockenv():
-    root = Path("/tmp/test_home/auth_store")
-    root.mkdir(parents=True, exist_ok=True)
-    vhome = tempfile.mkdtemp(prefix="/tmp/test_home/auth_store", dir=root.as_posix())
-
-    with mock.patch.dict(os.environ, {"VOLTTRON_HOME": vhome}):
-        yield
-
-    shutil.rmtree(vhome, ignore_errors=True)
-
-
 @pytest.fixture(scope="function")
-def setupstore() -> str:
+def setupstore(make_volttron_home_func_scope) -> str:    # type: ignore
     # root = Path("/tmp/test_home/auth_store")
     # root.mkdir(parents=True, exist_ok=True)
     # vhome = tempfile.mkdtemp(prefix="/tmp/test_home/auth_store", dir=root.as_posix())
@@ -34,7 +20,7 @@ def setupstore() -> str:
 
 
 @pytest.fixture
-def setupwith4creds(setupstore) -> FileBasedCredentialStore:
+def setupwith4creds(setupstore) -> FileBasedCredentialStore:    # type: ignore
     manager = FileBasedCredentialStore(setupstore)
     manager.store_credentials(credentials=Credentials(identity="basiccred"))
     manager.store_credentials(credentials=PublicCredentials(identity="publiccred", publickey="publickey"))
