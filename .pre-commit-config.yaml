@@ -13,12 +13,6 @@ repos:
   - id: no-commit-to-branch  # blocks main commits.  To bypass do git commit --allow-empty
   - id: pretty-format-json
 
-
-#- repo: https://github.com/pre-commit/mirrors-autopep8
-#  rev: v1.6.0
-#  hooks:
-#    - id: autopep8
-
 - repo: https://github.com/google/yapf
   rev: v0.40.2  # Use the sha / tag you want to point at
   hooks:
