@@ -12,4 +12,5 @@ if source_path not in sys.path:
 
 from volttron.loader import load_dir
 
-load_dir("testvolttronlibauth", Path(__file__).parent / "testvolttronlibauth")
+load_dir("authfixtures", Path(__file__).parent / "authfixtures")
+# load_dir("volttron.platform.auth", Path(__file__).parent.parent / "src/volttron/platform/auth")

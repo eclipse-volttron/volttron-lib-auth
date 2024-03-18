@@ -8,7 +8,10 @@ readme = "README.md"
 repository = "https://github.com/eclipse-volttron/volttron-lib-auth"
 homepage = "https://github.com/eclipse-volttron/volttron-lib-auth"
 keywords = []
-packages = [ { include = "volttron", from = "src" } ]
+packages = [
+    { include = "volttron", from = "src" },
+    { include = "authfixtures", from = "tests" }
+]
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Intended Audience :: Science/Research",
@@ -23,15 +26,8 @@ volttron = { path="../volttron-core", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 # formatting, quality, tests
-pytest = "^7.4.4"
-mock = "^5.1.0"
-pre-commit = "^3.6.0"
-yapf = "^0.40.2"
-toml = "^0.10.2"
-mypy = "^1.8.0"
-coverage = "^7.4.0"
-Sphinx = "^7.2.6"
-sphinx-rtd-theme = "^2.0.0"
+volttron-test-utils = { path="../volttron-test-utils", develop = true}
+
 
 [build-system]
 requires = ["poetry-core>=1.2.2"]

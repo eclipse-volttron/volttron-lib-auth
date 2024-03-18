@@ -48,7 +48,7 @@ def test_credential_store_init(setupstore):
     """Test initializing the credential store."""
     assert os.environ.get('VOLTTRON_HOME') == setupstore
     cred_store = FileBasedCredentialStore()
-    assert cred_store.credentials_repository == Path(setupstore) / "credential_store"
+    assert cred_store.credentials_repository == Path(setupstore) / "credentials_store"
 
     repository = Path(setupstore)
     manager = FileBasedCredentialStore(repository)

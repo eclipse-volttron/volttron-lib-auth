@@ -37,6 +37,8 @@
 # }}}
 from __future__ import annotations
 
+import identify
+
 __all__ = ["AuthService", "AuthFile", "AuthEntry", "AuthFileEntryAlreadyExists", "AuthFileIndexError", "AuthException"]
 
 import bisect
@@ -45,41 +47,33 @@ import os
 import random
 import re
 import shutil
-from pathlib import Path
-from typing import Optional
 import uuid
 from collections import defaultdict
+from pathlib import Path
+from typing import Optional
 
 import gevent
 import gevent.core
+import volttron.types.server_config as sc
 from gevent import Greenlet
 from gevent.fileobject import FileObject
-
-from volttron.decorators import authservice, authorizer, authenticator
-from volttron.types import AgentContext, AgentOptions
-from volttron.types.auth import (Credentials, CredentialsStore, Authenticator, Authorizer, CredentialsManager,
-                                 AuthorizationManager)
-from volttron.server.run_server import ServerOptions
-from volttron.utils import (
-    ClientContext as cc,
-    create_file_if_missing,
-    strip_comments,
-)
-from volttron.utils import jsonapi
-from volttron.utils.filewatch import watch_file
+from volttron.client.known_identities import (CONTROL, CONTROL_CONNECTION, VOLTTRON_CENTRAL_PLATFORM)
 #from volttron.utils.certs import Certs
 # from volttron.utils.keystore import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
 #from volttron.client.vip.agent import RPC, VIPError  # , # Core, RPC, VIPError
 from volttron.client.vip.agent import Agent
-from volttron.client.known_identities import (
-    VOLTTRON_CENTRAL_PLATFORM,
-    CONTROL,
-    CONTROL_CONNECTION,
-)
-
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
-import volttron.types.server_config as sc
+from volttron.server.decorators import (authenticator, authorizer, authservice, service)
+from volttron.server.server_options import ServerOptions
+from volttron.types import AgentContext, AgentOptions, Identity
+from volttron.types.auth import (Authenticator, AuthorizationManager, Authorizer, Credentials, CredentialsCreator,
+                                 CredentialsStore, PKICredentials)
+from volttron.types.bases import Service
+from volttron.utils import ClientContext as cc
+from volttron.utils import create_file_if_missing, jsonapi, strip_comments
+from volttron.utils.filewatch import watch_file
+from volttron.utils.logs import logtrace
 
 # from volttron.platform.certs import Certs
 # from volttron.platform.vip.agent.errors import VIPError
@@ -117,29 +111,41 @@ class AuthException(Exception):
 
 
 @authorizer
-class AuthFileAuthorization:
+class AuthFileAuthorization(Authorizer):
 
-    def __init__(*, credentials_rules_map: any, **kwargs):
-        ...
+    def __init__(self, *, options: ServerOptions):
+        self._auth = options.volttron_home / "auth.json"
 
-    def is_authorized(*, role: str, action: str, resource: any, **kwargs) -> bool:
-        ...
+    def is_authorized(self, *, role: str, action: str, resource: any, **kwargs) -> bool:
+        # TODO: Implement authorization based upon auth roles.
+        return True
 
 
 @authenticator
-class AuthFileAuthentication:
+class AuthFileAuthentication(Authenticator):
 
-    def __init__(*, credentials_store: CredentialsStore, **kwargs):
-        ...
+    def __init__(self, *, credentials_store: CredentialsStore, **kwargs):
+        self._credstore = credentials_store
 
-    def authenticate(*, credentials: Credentials) -> bool:
-        ...
+    def authenticate(self, *, domain: str, address: str, credentials: Credentials) -> Optional[Identity]:
+        identity = None
+
+        if hasattr(credentials, "publickey"):
+            try:
+                creds = self._credstore.retrieve_credentials_by_key(key="publickey",
+                                                                    value=credentials.publickey,
+                                                                    credentials_type=PKICredentials)
+                identity = creds.identity
+            except KeyError:
+                # Happens if credentials aren't found.
+                pass
+        return identity
 
 
-@authservice
-class AuthService(Agent):
+@service
+class AuthenticationService(Service, Agent):
 
-    _instance: AuthService = None    # type: ignore
+    _instance: AuthenticationService = None    # type: ignore
 
     class Meta:
         identity = "platform.auth"
@@ -155,7 +161,7 @@ class AuthService(Agent):
                  authorizer: Authorizer,
                  authenticator: Authenticator,
                  auth_rule_creator: AuthorizationManager,
-                 credential_creator: CredentialsManager,
+                 credential_creator: CredentialsCreator,
                  server_options=ServerOptions):
 
         self._store = credentials_store
@@ -220,6 +226,9 @@ class AuthService(Agent):
 
         self._watch_file_greenlets: List[Greenlet] = []
 
+    def start(**kwargs):
+        _log.debug("Starting Auth Service")
+
     @staticmethod
     def get_auth_type(self) -> str:
         ...
@@ -230,7 +239,7 @@ class AuthService(Agent):
     def is_authorized(self, credentials: Credentials, action: str, resource: str) -> bool:
         ...
 
-    def register_credentials(self, credentials: Credentials):
+    def add_credentials(self, credentials: Credentials):
         ...
 
     def is_credentials(self, identity: str) -> bool:
