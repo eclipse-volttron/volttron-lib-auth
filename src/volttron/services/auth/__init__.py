@@ -7,8 +7,6 @@
 
 from typing import List
 
-from . auth_service import AuthService
+from volttron.types.auth import AuthService
 
-__all__: List[str] = [
-    "AuthService"
-]  # noqa: WPS410 (the only __variable__ we use)
+__all__: List[str] = ["AuthService"]    # noqa: WPS410 (the only __variable__ we use)

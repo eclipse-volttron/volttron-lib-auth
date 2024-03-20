@@ -36,7 +36,6 @@
 # under Contract DE-AC05-76RL01830
 # }}}
 
-
 import logging
 import os
 import re
@@ -46,23 +45,26 @@ import uuid
 import gevent
 import gevent.core
 from gevent.fileobject import FileObject
+from volttron.client.known_identities import CONTROL, VOLTTRON_CENTRAL_PLATFORM
 
-from volttron.platform import jsonapi, get_home
-from volttron.platform.agent.known_identities import (
-    VOLTTRON_CENTRAL_PLATFORM,
-    CONTROL)
-from volttron.platform.agent.utils import (
-    strip_comments,
-    create_file_if_missing,
-)
+#from volttron.platform.agent.known_identities import (CONTROL, VOLTTRON_CENTRAL_PLATFORM)
+#from volttron.utils.platform.agent.utils import (create_file_if_missing, strip_comments)
+#from volttron.utils import get_home, jsonapi
 
-from volttron.platform.auth.auth_utils import isregex
-from volttron.platform.auth.auth_exception import AuthException
+
+def get_home():
+    return os.environ.get("VOLTTRON_HOME")
+
+
 from volttron.platform.auth.auth_entry import AuthEntry, AuthEntryInvalid
+from volttron.platform.auth.auth_exception import AuthException
+from volttron.platform.auth.auth_utils import isregex
 
 _log = logging.getLogger(__name__)
 
+
 class AuthFile(object):
+
     def __init__(self, auth_file=None):
         self.auth_data = {}
         if auth_file is None:
@@ -91,9 +93,7 @@ class AuthFile(object):
                 _log.error(
                     "This version of VOLTTRON cannot parse %r. "
                     "Please upgrade VOLTTRON or move or delete "
-                    "this file.",
-                    self.auth_file
-                )
+                    "this file.", self.auth_file)
 
     def _read(self):
         auth_data = {}
@@ -103,9 +103,7 @@ class AuthFile(object):
                 # Use gevent FileObject to avoid blocking the thread
                 before_strip_comments = FileObject(fil, close=False).read()
                 if isinstance(before_strip_comments, bytes):
-                    before_strip_comments = before_strip_comments.decode(
-                        "utf-8"
-                    )
+                    before_strip_comments = before_strip_comments.decode("utf-8")
                 data = strip_comments(before_strip_comments)
                 if data:
                     auth_data = jsonapi.loads(data)
@@ -116,9 +114,7 @@ class AuthFile(object):
         auth_output_data["deny_list"] = auth_data.get("deny", [])
         auth_output_data["groups"] = auth_data.get("groups", {})
         auth_output_data["roles"] = auth_data.get("roles", {})
-        auth_output_data["version"] = auth_data.get(
-            "version", {"major": 0, "minor": 0}
-        )
+        auth_output_data["version"] = auth_data.get("version", {"major": 0, "minor": 0})
         return auth_output_data
 
     def load(self):
@@ -132,12 +128,8 @@ class AuthFile(object):
         :returns: tuple of allow-entries-list, groups-dict, roles-dict
         :rtype: tuple
         """
-        allow_entries, deny_entries = self._get_entries(
-            self.auth_data["allow_list"], self.auth_data["deny_list"]
-        )
-        self._use_groups_and_roles(
-            allow_entries, self.auth_data["groups"], self.auth_data["roles"]
-        )
+        allow_entries, deny_entries = self._get_entries(self.auth_data["allow_list"], self.auth_data["deny_list"])
+        self._use_groups_and_roles(allow_entries, self.auth_data["groups"], self.auth_data["roles"])
         return (
             allow_entries,
             deny_entries,
@@ -152,12 +144,7 @@ class AuthFile(object):
 
         def warn_invalid(entry, msg=""):
             """Warns if entry is invalid."""
-            _log.warning(
-                "invalid entry %r in auth file %s (%s)",
-                entry,
-                self.auth_file,
-                msg
-            )
+            _log.warning("invalid entry %r in auth file %s (%s)", entry, self.auth_file, msg)
 
         def upgrade_0_to_1(allow_list):
             new_allow_list = []
@@ -186,20 +173,18 @@ class AuthFile(object):
                     except IndexError:
                         warn_invalid(entry, "Unexpected server_credential format")
                         continue
-                new_allow_list.append(
-                    {
-                        "domain": entry.get("domain"),
-                        "address": entry.get("address"),
-                        "mechanism": mechanism,
-                        "credentials": credentials,
-                        "user_id": entry.get("user_id"),
-                        "groups": entry.get("groups", []),
-                        "roles": entry.get("roles", []),
-                        "capabilities": entry.get("capabilities", []),
-                        "comments": entry.get("comments"),
-                        "enabled": entry.get("enabled", True),
-                    }
-                )
+                new_allow_list.append({
+                    "domain": entry.get("domain"),
+                    "address": entry.get("address"),
+                    "mechanism": mechanism,
+                    "credentials": credentials,
+                    "user_id": entry.get("user_id"),
+                    "groups": entry.get("groups", []),
+                    "roles": entry.get("roles", []),
+                    "capabilities": entry.get("capabilities", []),
+                    "comments": entry.get("comments"),
+                    "enabled": entry.get("enabled", True),
+                })
             return new_allow_list
 
         def upgrade_1_0_to_1_1(allow_list):
@@ -210,11 +195,9 @@ class AuthFile(object):
                 if user_id:
                     if user_id in user_id_set:
                         new_user_id = str(uuid.uuid4())
-                        msg = (
-                            "user_id {} is already present in "
-                            "authentication entry. Changed to user_id to "
-                            "{}"
-                        ).format(user_id, new_user_id)
+                        msg = ("user_id {} is already present in "
+                               "authentication entry. Changed to user_id to "
+                               "{}").format(user_id, new_user_id)
                         _log.warning(msg)
                         user_id_ = new_user_id
                 else:
@@ -231,12 +214,8 @@ class AuthFile(object):
                 if user_id in [CONTROL, VOLTTRON_CENTRAL_PLATFORM]:
                     user_id = "/.*/"
                 capabilities = entry.get("capabilities")
-                entry["capabilities"] = (
-                    AuthEntry.build_capabilities_field(capabilities) or {}
-                )
-                entry["capabilities"]["edit_config_store"] = {
-                    "identity": user_id
-                }
+                entry["capabilities"] = (AuthEntry.build_capabilities_field(capabilities) or {})
+                entry["capabilities"]["edit_config_store"] = {"identity": user_id}
                 new_allow_list.append(entry)
             return new_allow_list
 
@@ -244,15 +223,9 @@ class AuthFile(object):
             """Adds rpc_method_authorizations section to auth entries."""
             new_allow_list = []
             for entry in allow_list:
-                rpc_method_authorizations = entry.get(
-                    "rpc_method_authorizations"
-                )
+                rpc_method_authorizations = entry.get("rpc_method_authorizations")
                 entry["rpc_method_authorizations"] = (
-                    AuthEntry.build_rpc_authorizations_field(
-                        rpc_method_authorizations
-                    )
-                    or {}
-                )
+                    AuthEntry.build_rpc_authorizations_field(rpc_method_authorizations) or {})
                 new_allow_list.append(entry)
             return new_allow_list
 
@@ -300,17 +273,9 @@ class AuthFile(object):
         """
 
         if is_allow:
-            return [
-                entry
-                for entry in self.read_allow_entries()
-                if str(entry.credentials) == credentials
-            ]
+            return [entry for entry in self.read_allow_entries() if str(entry.credentials) == credentials]
         else:
-            return [
-                entry
-                for entry in self.read_deny_entries()
-                if str(entry.credentials) == credentials
-            ]
+            return [entry for entry in self.read_deny_entries() if str(entry.credentials) == credentials]
 
     def _get_entries(self, allow_list, deny_list):
         allow_entries = []
@@ -376,12 +341,8 @@ class AuthFile(object):
 
                 # Compare AuthEntry objects component-wise, rather than
                 # using match, because match will evaluate regex.
-                if (
-                        prev_entry.domain == entry.domain
-                        and prev_entry.address == entry.address
-                        and prev_entry.mechanism == entry.mechanism
-                        and prev_entry.credentials == entry.credentials
-                ):
+                if (prev_entry.domain == entry.domain and prev_entry.address == entry.address
+                        and prev_entry.mechanism == entry.mechanism and prev_entry.credentials == entry.credentials):
                     raise AuthFileEntryAlreadyExists([index])
         else:
             for index, prev_entry in enumerate(self.read_deny_entries()):
@@ -390,12 +351,8 @@ class AuthFile(object):
 
                 # Compare AuthEntry objects component-wise, rather than
                 # using match, because match will evaluate regex.
-                if (
-                        prev_entry.domain == entry.domain
-                        and prev_entry.address == entry.address
-                        and prev_entry.mechanism == entry.mechanism
-                        and prev_entry.credentials == entry.credentials
-                ):
+                if (prev_entry.domain == entry.domain and prev_entry.address == entry.address
+                        and prev_entry.mechanism == entry.mechanism and prev_entry.credentials == entry.credentials):
                     raise AuthFileEntryAlreadyExists([index])
 
     def _update_by_indices(self, auth_entry, indices, is_allow=True):
@@ -463,16 +420,12 @@ class AuthFile(object):
                         self._check_if_exists(entry)
                         allow_entries.append(entry)
                     except AuthFileEntryAlreadyExists:
-                        _log.warning(
-                            f"Entry for {user_id} already exists! Removing "
-                            f"from denied credentials"
-                        )
+                        _log.warning(f"Entry for {user_id} already exists! Removing "
+                                     f"from denied credentials")
                 else:
                     pass
             # Remove entry from denied entries
-            deny_entries = [
-                entry for entry in deny_entries if entry.user_id != user_id
-            ]
+            deny_entries = [entry for entry in deny_entries if entry.user_id != user_id]
         else:
             for entry in allow_entries:
                 if entry.user_id == user_id:
@@ -481,16 +434,12 @@ class AuthFile(object):
                         self._check_if_exists(entry, is_allow=False)
                         deny_entries.append(entry)
                     except AuthFileEntryAlreadyExists:
-                        _log.warning(
-                            f"Entry for {user_id} already exists! Removing "
-                            f"from allowed credentials"
-                        )
+                        _log.warning(f"Entry for {user_id} already exists! Removing "
+                                     f"from allowed credentials")
                 else:
                     pass
             # Remove entry from allowed entries
-            allow_entries = [
-                entry for entry in allow_entries if entry.user_id != user_id
-            ]
+            allow_entries = [entry for entry in allow_entries if entry.user_id != user_id]
 
         self._write(allow_entries, deny_entries, groups, roles)
         gevent.sleep(1)
@@ -507,9 +456,7 @@ class AuthFile(object):
             entries = allow_entries
         else:
             entries = deny_entries
-        entries = [
-            entry for entry in entries if entry.credentials != credentials
-        ]
+        entries = [entry for entry in entries if entry.credentials != credentials]
         if is_allow:
             self._write(entries, deny_entries, groups, roles)
         else:
@@ -560,10 +507,8 @@ class AuthFile(object):
             raise ValueError("{} parameter must be dict".format(param_name))
         for key, value in groups_or_roles.items():
             if not isinstance(value, list):
-                raise ValueError(
-                    "each value of the {} dict must be "
-                    "a list".format(param_name)
-                )
+                raise ValueError("each value of the {} dict must be "
+                                 "a list".format(param_name))
         allow_entries, deny_entries, groups, roles = self.read()
         if is_group:
             groups = groups_or_roles
@@ -635,7 +580,6 @@ class AuthFile(object):
 
 
 class AuthFileIndexError(AuthException, IndexError):
-
     """
     Exception for invalid indices provided to AuthFile.
     """
@@ -644,36 +588,30 @@ class AuthFileIndexError(AuthException, IndexError):
         if not isinstance(indices, list):
             indices = [indices]
         if message is None:
-            message = "Invalid {}: {}".format(
-                "indicies" if len(indices) > 1 else "index", indices
-            )
+            message = "Invalid {}: {}".format("indicies" if len(indices) > 1 else "index", indices)
         super(AuthFileIndexError, self).__init__(message)
         self.indices = indices
 
 
 class AuthFileEntryAlreadyExists(AuthFileIndexError):
-
     """
     Exception if adding an entry that already exists.
     """
 
     def __init__(self, indicies, message=None):
         if message is None:
-            message = (
-                "entry matches domain, address and credentials at " "index {}"
-            ).format(indicies)
+            message = ("entry matches domain, address and credentials at "
+                       "index {}").format(indicies)
         super(AuthFileEntryAlreadyExists, self).__init__(indicies, message)
 
 
 class AuthFileUserIdAlreadyExists(AuthFileEntryAlreadyExists):
-
     """
     Exception if adding an entry that has a taken user_id.
     """
 
     def __init__(self, user_id, indicies, message=None):
         if message is None:
-            message = ("user_id {} is already in use at " "index {}").format(
-                user_id, indicies
-            )
+            message = ("user_id {} is already in use at "
+                       "index {}").format(user_id, indicies)
         super(AuthFileUserIdAlreadyExists, self).__init__(indicies, message)
