@@ -40,10 +40,15 @@ import gevent
 import gevent.core
 import volttron.types.server_config as server_config
 from gevent.fileobject import FileObject
-from volttron.client.known_identities import (CONTROL, CONTROL_CONNECTION, VOLTTRON_CENTRAL_PLATFORM)
+from volttron.client.known_identities import (AUTH, CONTROL, CONTROL_CONNECTION, VOLTTRON_CENTRAL_PLATFORM)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
+from volttron.server.containers import service_repo
+from volttron.server.decorators import authservice
+from volttron.server.server_options import ServerOptions
+from volttron.types.auth.auth_service import AbstractAuthService
+from volttron.types.bases import Service
 from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
@@ -88,13 +93,46 @@ class AuthException(Exception):
     pass
 
 
-class AuthService(ServiceInterface):
+@authservice
+#class AuthService(ServiceInterface):
+class AuthService(AbstractAuthService, Agent):
 
-    def __init__(self, server_config, **kwargs):
+    class Meta:
+        identity = AUTH
+
+    def is_authorized(credentials: Credentials, action: str, resource: str, **kwargs) -> bool:
+        ...
+
+    def add_credentials(credentials: Credentials):
+        ...
+
+    def remove_credentials(credentials: Credentials):
+        ...
+
+    def is_credentials(identity: str) -> bool:
+        ...
+
+    def has_credentials_for(identity: str) -> bool:
+        ...
+
+    def add_role(role: str) -> None:
+        ...
+
+    def remove_role(role: str) -> None:
+        ...
+
+    def is_role(role: str) -> bool:
+        ...
+
+    def __init__(self, options: ServerOptions, **kwargs):    # options: ServerOptions, **kwargs):
+        kwargs.pop("identity", None)
+        server_config = options
         #auth_file, protected_topics_file, setup_mode, aip, *args, **kwargs):
         self.allow_any = kwargs.pop("allow_any", False)
+        kwargs.pop('address', None)
+        kwargs['address'] = options.service_address
 
-        super(AuthService, self).__init__(**kwargs)
+        super(AuthService, self).__init__(identity=AuthService.Meta.identity, **kwargs)
 
         self._server_config = server_config
         # This agent is started before the router so we need
@@ -103,17 +141,18 @@ class AuthService(ServiceInterface):
         self._certs = None
         if cc.get_messagebus() == "rmq":
             self._certs = Certs()
-        self.auth_file_path = str(self._server_config.auth_file)
+        self.auth_file_path = (options.volttron_home / "auth.json").as_posix()
         self.auth_file = AuthFile(self.auth_file_path)
         self.aip = self._server_config.aip
         self.zap_socket = None
         self._zap_greenlet = None
         self.auth_entries = []
         self._is_connected = False
-        self._protected_topics_file_path = str(self._server_config.protected_topics_file)
-        self._protected_topics_file = str(self._server_config.protected_topics_file)
+        self._protected_topics_file_path = (options.volttron_home / "protected_topics.json").as_posix()
+        self._protected_topics_file = self._protected_topics_file_path
         self._protected_topics_for_rmq = ProtectedPubSubTopics()
-        self._setup_mode = self._server_config.opts.setup_mode
+        # TODO: setup_mode is not in options for right now this is a TODO for it.
+        self._setup_mode = False    #options.setup_mode
         self._auth_pending = []
         self._auth_denied = []
         self._auth_approved = []
@@ -146,8 +185,6 @@ class AuthService(ServiceInterface):
             self._protected_topics_file_path,
             self._read_protected_topics_file,
         )
-        if self.core.messagebus == "rmq":
-            self.vip.peerlist.onadd.connect(self._check_topic_rules)
 
     def _update_auth_lists(self, entries, is_allow=True):
         auth_list = []
