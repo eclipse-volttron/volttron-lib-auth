@@ -22,4 +22,5 @@
 # ===----------------------------------------------------------------------===
 # }}}
 # import volttron.server.control
+import volttron.auth
 from volttron.services.auth.auth_service import (AuthEntry, AuthFile, AuthFileEntryAlreadyExists, AuthService)

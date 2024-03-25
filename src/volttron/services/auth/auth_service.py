@@ -40,14 +40,18 @@ import gevent
 import gevent.core
 import volttron.types.server_config as server_config
 from gevent.fileobject import FileObject
-from volttron.client.known_identities import (AUTH, CONTROL, CONTROL_CONNECTION, VOLTTRON_CENTRAL_PLATFORM)
+from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE, CONTROL, CONTROL_CONNECTION,
+                                              VOLTTRON_CENTRAL_PLATFORM)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
 from volttron.server.containers import service_repo
-from volttron.server.decorators import authservice
+from volttron.server.decorators import (authenticator, authorization_manager, authorizer, authservice,
+                                        credentials_creator, credentials_store)
 from volttron.server.server_options import ServerOptions
-from volttron.types.auth.auth_service import AbstractAuthService
+from volttron.types.auth.auth_credentials import (Credentials, CredentialsCreator, CredentialsStore, IdentityNotFound,
+                                                  PKICredentials)
+from volttron.types.auth.auth_service import (AbstractAuthService, Authenticator, AuthorizationManager, Authorizer)
 from volttron.types.bases import Service
 from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
@@ -93,6 +97,38 @@ class AuthException(Exception):
     pass
 
 
+@authorizer
+class AuthFileAuthorization(Authorizer):
+
+    def __init__(self, *, options: ServerOptions):
+        self._auth = options.volttron_home / "auth.json"
+
+    def is_authorized(self, *, role: str, action: str, resource: any, **kwargs) -> bool:
+        # TODO: Implement authorization based upon auth roles.
+        return True
+
+
+@authenticator
+class AuthFileAuthentication(Authenticator):
+
+    def __init__(self, *, credentials_store: CredentialsStore, **kwargs):
+        self._credstore = credentials_store
+
+    def authenticate(self, *, domain: str, address: str, credentials: Credentials) -> Optional[Identity]:
+        identity = None
+
+        if hasattr(credentials, "publickey"):
+            try:
+                creds = self._credstore.retrieve_credentials_by_key(key="publickey",
+                                                                    value=credentials.publickey,
+                                                                    credentials_type=PKICredentials)
+                identity = creds.identity
+            except KeyError:
+                # Happens if credentials aren't found.
+                pass
+        return identity
+
+
 @authservice
 #class AuthService(ServiceInterface):
 class AuthService(AbstractAuthService, Agent):
@@ -100,39 +136,65 @@ class AuthService(AbstractAuthService, Agent):
     class Meta:
         identity = AUTH
 
-    def is_authorized(credentials: Credentials, action: str, resource: str, **kwargs) -> bool:
+    def authenticate(self,
+                     *,
+                     credentials: Credentials,
+                     address: str,
+                     domain: Optional[str] = None) -> Optional[Identity]:
+        return self._authenticator.authenticate(credentials=credentials, address=address, domain=domain)
+
+    def has_credentials_for(self, *, identity: str) -> bool:
+        return self.is_credentials(identity=identity)
+
+    def is_authorized(self, *, credentials: Credentials, action: str, resource: str, **kwargs) -> bool:
+        return self._authorizer.is_authorized(credentials, action, resource, **kwargs)
+
+    def add_credentials(self, *, credentials: Credentials):
+        self._credentials_store.store_credentials(credentials=credentials)
+
+    def remove_credentials(self, *, credentials: Credentials):
+        self._credentials_store.remove_credentials(identity=credentials.identity)
+
+    def is_credentials(self, *, identity: str) -> bool:
+        try:
+            self._credentials_store.retrieve_credentials(identity=identity)
+            returnval = True
+        except IdentityNotFound:
+            returnval = False
+        return returnval
+
+    def add_role(self, role: str) -> None:
+
         ...
 
-    def add_credentials(credentials: Credentials):
+    def remove_role(self, role: str) -> None:
         ...
 
-    def remove_credentials(credentials: Credentials):
+    def is_role(self, role: str) -> bool:
         ...
 
-    def is_credentials(identity: str) -> bool:
-        ...
+    def __init__(self, *, credentials_store: CredentialsStore, authorizer: Authorizer, authenticator: Authenticator,
+                 auth_rule_creator: AuthorizationManager, credentials_creator: CredentialsCreator,
+                 server_options: ServerOptions):
 
-    def has_credentials_for(identity: str) -> bool:
-        ...
-
-    def add_role(role: str) -> None:
-        ...
-
-    def remove_role(role: str) -> None:
-        ...
-
-    def is_role(role: str) -> bool:
-        ...
-
-    def __init__(self, options: ServerOptions, **kwargs):    # options: ServerOptions, **kwargs):
-        kwargs.pop("identity", None)
-        server_config = options
+        self._authorizer = authorizer
+        self._authenticator = authenticator
+        self._credentials_store = credentials_store
+        self._credentials_creator = credentials_creator
+        #    def __init__(self, options: ServerOptions, **kwargs):    # options: ServerOptions, **kwargs):
+        #kwargs.pop("identity", None)
+        server_config = server_options
         #auth_file, protected_topics_file, setup_mode, aip, *args, **kwargs):
-        self.allow_any = kwargs.pop("allow_any", False)
-        kwargs.pop('address', None)
-        kwargs['address'] = options.service_address
 
-        super(AuthService, self).__init__(identity=AuthService.Meta.identity, **kwargs)
+        for k in (CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, "server"):
+            try:
+                self._credentials_store.retrieve_credentials(identity=k)
+            except IdentityNotFound:
+                self._credentials_store.store_credentials(credentials=self._credentials_creator.create(identity=k))
+
+        my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
+
+        super().__init__(credentials=my_creds, address=server_options.service_address)
 
         self._server_config = server_config
         # This agent is started before the router so we need
@@ -141,14 +203,14 @@ class AuthService(AbstractAuthService, Agent):
         self._certs = None
         if cc.get_messagebus() == "rmq":
             self._certs = Certs()
-        self.auth_file_path = (options.volttron_home / "auth.json").as_posix()
+        self.auth_file_path = (server_options.volttron_home / "auth.json").as_posix()
         self.auth_file = AuthFile(self.auth_file_path)
         self.aip = self._server_config.aip
         self.zap_socket = None
         self._zap_greenlet = None
         self.auth_entries = []
         self._is_connected = False
-        self._protected_topics_file_path = (options.volttron_home / "protected_topics.json").as_posix()
+        self._protected_topics_file_path = (server_options.volttron_home / "protected_topics.json").as_posix()
         self._protected_topics_file = self._protected_topics_file_path
         self._protected_topics_for_rmq = ProtectedPubSubTopics()
         # TODO: setup_mode is not in options for right now this is a TODO for it.
@@ -175,8 +237,9 @@ class AuthService(AbstractAuthService, Agent):
     def setup_zap(self, sender, **kwargs):
         self.zap_socket = zmq.Socket(zmq.Context.instance(), zmq.ROUTER)
         self.zap_socket.bind("inproc://zeromq.zap.01")
-        if self.allow_any:
-            _log.warning("insecure permissive authentication enabled")
+        # TODO: How do we want to do the permisive thing here.
+        # if self.allow_any:
+        #     _log.warning("insecure permissive authentication enabled")
         self.read_auth_file()
         self._read_protected_topics_file()
         self.core.spawn(watch_file, self.auth_file_path, self.read_auth_file)
@@ -238,11 +301,7 @@ class AuthService(AbstractAuthService, Agent):
                 # Use gevent FileObject to avoid blocking the thread
                 data = FileObject(fil, close=False).read()
                 self._protected_topics = jsonapi.loads(data) if data else {}
-                if self.core.messagebus == "rmq":
-                    self._load_protected_topics_for_rmq()
-                    # Deferring the RMQ topic permissions to after "onstart" event
-                else:
-                    self._send_protected_update_to_pubsub(self._protected_topics)
+                self._send_protected_update_to_pubsub(self._protected_topics)
         except Exception:
             _log.exception("error loading %s", self._protected_topics_file)
 
