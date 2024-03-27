@@ -40,18 +40,25 @@ import gevent
 import gevent.core
 import volttron.types.server_config as server_config
 from gevent.fileobject import FileObject
-from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE, CONTROL, CONTROL_CONNECTION,
+from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
+                                              CONTROL, CONTROL_CONNECTION,
                                               VOLTTRON_CENTRAL_PLATFORM)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
 from volttron.server.containers import service_repo
-from volttron.server.decorators import (authenticator, authorization_manager, authorizer, authservice,
+from volttron.server.decorators import (authenticator, authorization_manager,
+                                        authorizer, authservice,
                                         credentials_creator, credentials_store)
 from volttron.server.server_options import ServerOptions
-from volttron.types.auth.auth_credentials import (Credentials, CredentialsCreator, CredentialsStore, IdentityNotFound,
+from volttron.types.auth.auth_credentials import (Credentials,
+                                                  CredentialsCreator,
+                                                  CredentialsStore,
+                                                  IdentityNotFound,
                                                   PKICredentials)
-from volttron.types.auth.auth_service import (AbstractAuthService, Authenticator, AuthorizationManager, Authorizer)
+from volttron.types.auth.auth_service import (AbstractAuthService,
+                                              Authenticator,
+                                              AuthorizationManager, Authorizer)
 from volttron.types.bases import Service
 from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
@@ -136,45 +143,8 @@ class AuthService(AbstractAuthService, Agent):
     class Meta:
         identity = AUTH
 
-    def authenticate(self,
-                     *,
-                     credentials: Credentials,
-                     address: str,
-                     domain: Optional[str] = None) -> Optional[Identity]:
-        return self._authenticator.authenticate(credentials=credentials, address=address, domain=domain)
-
-    def has_credentials_for(self, *, identity: str) -> bool:
-        return self.is_credentials(identity=identity)
-
-    def is_authorized(self, *, credentials: Credentials, action: str, resource: str, **kwargs) -> bool:
-        return self._authorizer.is_authorized(credentials, action, resource, **kwargs)
-
-    def add_credentials(self, *, credentials: Credentials):
-        self._credentials_store.store_credentials(credentials=credentials)
-
-    def remove_credentials(self, *, credentials: Credentials):
-        self._credentials_store.remove_credentials(identity=credentials.identity)
-
-    def is_credentials(self, *, identity: str) -> bool:
-        try:
-            self._credentials_store.retrieve_credentials(identity=identity)
-            returnval = True
-        except IdentityNotFound:
-            returnval = False
-        return returnval
-
-    def add_role(self, role: str) -> None:
-
-        ...
-
-    def remove_role(self, role: str) -> None:
-        ...
-
-    def is_role(self, role: str) -> bool:
-        ...
-
     def __init__(self, *, credentials_store: CredentialsStore, authorizer: Authorizer, authenticator: Authenticator,
-                 auth_rule_creator: AuthorizationManager, credentials_creator: CredentialsCreator,
+                 authz_manager: AuthorizationManager, credentials_creator: CredentialsCreator,
                  server_options: ServerOptions):
 
         self._authorizer = authorizer
@@ -186,15 +156,24 @@ class AuthService(AbstractAuthService, Agent):
         server_config = server_options
         #auth_file, protected_topics_file, setup_mode, aip, *args, **kwargs):
 
+        roles = authz_manager.getall()
+
+        if not roles:
+            authz_manager.create(role="admin", action="all", resource="all")
+
         for k in (CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, "server"):
             try:
                 self._credentials_store.retrieve_credentials(identity=k)
+                authz_manager.apply_role(identity=k, role="admin")
             except IdentityNotFound:
                 self._credentials_store.store_credentials(credentials=self._credentials_creator.create(identity=k))
+                authz_manager.apply_role(identity=k, role="admin")
 
         my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
 
         super().__init__(credentials=my_creds, address=server_options.service_address)
+
+
 
         self._server_config = server_config
         # This agent is started before the router so we need
@@ -232,6 +211,45 @@ class AuthService(AbstractAuthService, Agent):
                           }],
                           comments="Automatically added by init of auth service")
         AuthFile().add(entry, overwrite=True)
+
+    def authenticate(self,
+                     *,
+                     credentials: Credentials,
+                     address: str,
+                     domain: Optional[str] = None) -> Optional[Identity]:
+        return self._authenticator.authenticate(credentials=credentials, address=address, domain=domain)
+
+    def has_credentials_for(self, *, identity: str) -> bool:
+        return self.is_credentials(identity=identity)
+
+    def is_authorized(self, *, credentials: Credentials, action: str, resource: str, **kwargs) -> bool:
+        return self._authorizer.is_authorized(credentials, action, resource, **kwargs)
+
+    def add_credentials(self, *, credentials: Credentials):
+        self._credentials_store.store_credentials(credentials=credentials)
+
+    def remove_credentials(self, *, credentials: Credentials):
+        self._credentials_store.remove_credentials(identity=credentials.identity)
+
+    def is_credentials(self, *, identity: str) -> bool:
+        try:
+            self._credentials_store.retrieve_credentials(identity=identity)
+            returnval = True
+        except IdentityNotFound:
+            returnval = False
+        return returnval
+
+    def add_role(self, role: str) -> None:
+
+        ...
+
+    def remove_role(self, role: str) -> None:
+        ...
+
+    def is_role(self, role: str) -> bool:
+        ...
+
+
 
     @Core.receiver("onsetup")
     def setup_zap(self, sender, **kwargs):

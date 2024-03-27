@@ -3,17 +3,20 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 from dataclass_wizard import JSONSerializable
-from volttron.server.decorators import service
-from volttron.types import Service
-from volttron.types.auth import AccessRule, AuthorizationManager
+from volttron.client.known_identities import AUTH, CONFIGURATION_STORE, CONTROL
+from volttron.server.decorators import authorization_manager
+from volttron.server.server_options import ServerOptions
+from volttron.types.auth import AuthorizationManager
+from volttron.types.auth.authz_types import AccessRule
+from volttron.types.bases import Service
 
 
 @dataclass
 class Resource(JSONSerializable):
-    resource: str
+    resource: Any
 
 
 @dataclass
@@ -27,7 +30,7 @@ class Action(JSONSerializable):
 class Role(JSONSerializable):
     name: str
     actions: dict[
-        str,
+        str, set(Resource)
     ] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -104,20 +107,44 @@ class RoleMap(JSONSerializable):
         return RoleMap.from_json(filepath.open("r").read())
 
 
-@service
-class VolttronAuthManager(Service, AuthorizationManager):
+@dataclass
+class IdentityRoleMapPersistence(JSONSerializable):
+    identity_rule_map: dict[str, set[AccessRule]] = field(default_factory=dict)
+    identity_role_map: dict[str, set[str]] = field(default_factory=dict)
+    role_rule_map: dict[str, set[AccessRule]] = field(default_factory=dict)
+
+    def store_to_file(self, filename: str):
+        print(self.to_json(indent=2))
+        print(filename)
+        filepath = Path(filename)
+        filepath.open("w").write(self.to_json(indent=2))
+
+    @staticmethod
+    def load_from_file(filename: str) -> IdentityRoleMapPersistence:
+        filepath = Path(filename)
+        if not filepath.exists():
+            return IdentityRoleMapPersistence()
+        d = IdentityRoleMapPersistence.from_json(filepath.open("r").read())
+        return d
+
+
+@authorization_manager
+class VolttronAuthManager(AuthorizationManager):
 
     def __init__(self,
                  *,
-                 roles: Optional[dict[str, set[AccessRule]]] = None,
-                 identity_roles_map: Optional[dict[str, set[str]]] = None,
+                 options: ServerOptions,
+                 persistence: Optional[IdentityRoleMapPersistence] = None,
                  **kwargs):
-        self._roles: dict[str, set[AccessRule]] = {}
-        self._identity_roles_map: dict[str, set[str]] = {}
-        if roles is not None:
-            self._roles = roles
-        if identity_roles_map is not None:
-            self._identity_roles_map = identity_roles_map
+
+        if persistence is None:
+            persistence = IdentityRoleMapPersistence.load_from_file(options.volttron_home / "auth_map.json")
+
+
+        self._identity_rule_map: dict[str, set[AccessRule]] = persistence.identity_rule_map
+        self._identity_roles_map: dict[str, set[AccessRule]] = persistence.identity_role_map
+        self._role_rule_map: dict[str, set[AccessRule]] = persistence.role_rule_map
+
 
     def identity_has_role(self, *, identity: str, role: str) -> bool:
         if role_set := self._identity_roles_map.get(identity):
@@ -127,8 +154,14 @@ class VolttronAuthManager(Service, AuthorizationManager):
     def is_a_role(self, *, role: str) -> bool:
         return role in self._roles
 
+    def assign_identity_to_rule(self, *, identity: str, rule: AccessRule):
+        if identity not in self._identity_rule_map:
+            self._identity_rule_map[identity] = set()
+
+        self._identity_rule_map[identity].add(rule)
+
     def assign_identity_to_role(self, *, role: str, identity: str):
-        if role not in self._roles:
+        if role not in self._role_rule_map:
             raise ValueError(f"Unknown role: {role}")
 
         if identity not in self._identity_roles_map:
@@ -137,9 +170,9 @@ class VolttronAuthManager(Service, AuthorizationManager):
         self._identity_roles_map[identity].add(role)
 
     def assign_rule_to_role(self, *, role: str, rule: AccessRule):
-        if role not in self._roles:
-            self._roles[role] = set()
-        self._roles[role].add(rule)
+        if role not in self._role_rule_map:
+            self._role_rule_map[role] = set()
+        self._role_rule_map[role].add(rule)
 
     def apply_role(self, identity: str, role: str):
         self._role_map.grant_access(identity=identity, role=role)
@@ -147,15 +180,16 @@ class VolttronAuthManager(Service, AuthorizationManager):
     # def create_rule(self, *, resource: str, action: str, role: str, filter: str = None):
     #     role = self._role_map.get_role(role)
 
-    def create_access_rule(self, *, resource: str, action: str, filter: str = None) -> AccessRule:
+    def create_access_rule(self,
+                           *,
+                           resource: str,
+                           action: str,
+                           filter: Optional[str | re.Pattern[str]] = None) -> AccessRule:
         return AccessRule(resource=resource, action=action, filter=filter)
 
-    def create(self, *, role: str, action: str, filter: str | re.Pattern[str], resource: any, **kwargs) -> None:
-        role = Role(name=role)
-        role.actions[action] = filter
-        role.resources[action] = resource
-
-        self._role_map.add_role(role)
+    def create(self, *, role: str, action: str, filter: Optional[str | re.Pattern[str]] = None, resource: Any, **kwargs) -> None:
+        rule = self.create_access_rule(resource=resource, action=action, filter=filter)
+        self.assign_rule_to_role(role=role, rule=rule)
 
     def delete(self, *, role: str, action: str, filter: str | re.Pattern[str], resource: any, **kwargs) -> any:
         raise NotImplementedError("Needs to be implemented")
@@ -164,14 +198,26 @@ class VolttronAuthManager(Service, AuthorizationManager):
         return role in self._identity_roles_map.get(identity, set())
 
     def getall(self) -> list:
-        ...
+        return list(self._role_map)
 
 
 if __name__ == '__main__':
 
-    role_map = RoleMap()
-    manager = VolttronAuthManager(role_map=role_map)
+    options = ServerOptions()
 
-    manager.create_rule(resource="config_store", action="edit", role="admin_config_store", filter="/.*/")
+    persister = IdentityRoleMapPersistence.load_from_file(options.volttron_home / "auth_map.json")
 
-    role_map.store_to_file(Path("~/.volttron/new_map.json").expanduser().as_posix())
+    manager = VolttronAuthManager(options=options, persistence=persister)
+
+    credstoreaccessrule = manager.create_access_rule(resource="credstore", action="*", filter="identity=foo")
+    rule = manager.create_access_rule(resource="*", action="*")
+    manager.assign_rule_to_role(role="admin", rule=rule)
+    manager.assign_identity_to_role(role="admin", identity=CONFIGURATION_STORE)
+    manager.assign_identity_to_role(role="admin", identity=AUTH)
+    manager.assign_identity_to_role(role="admin", identity=CONTROL)
+
+    rule2 = manager.create_access_rule(resource="platform.historian", action="query", filter="devices/*")
+    manager.assign_identity_to_rule(identity="can_call_bar", rule=rule2)
+    #manager.create_access_rule(resource="config_store", action="edit", filter="/.*/")
+
+    persister.store_to_file(options.volttron_home / "auth_map.json")
