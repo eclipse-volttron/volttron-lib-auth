@@ -528,6 +528,7 @@ class AuthService(AbstractAuthService, Agent):
         :rtype: dict
         """
         user_to_caps = {}
+        _log.debug(f"Auth Entries in get_user_to_capabilities {self.auth_entries}")
         for entry in self.auth_entries:
             user_to_caps[entry.user_id] = entry.capabilities
         return user_to_caps
