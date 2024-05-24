@@ -42,7 +42,8 @@ import volttron.types.server_config as server_config
 from gevent.fileobject import FileObject
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
-                                              VOLTTRON_CENTRAL_PLATFORM)
+                                              VOLTTRON_CENTRAL_PLATFORM,
+                                              PLATFORM)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
@@ -67,6 +68,8 @@ from volttron.utils.certs import Certs
 from volttron.utils.filewatch import watch_file
 from volttron.utils.keystore import BASE64_ENCODED_CURVE_KEY_LEN, encode_key
 from zmq import green as zmq
+from vottron.decorators import service
+import volttron.types.auth.authz_types as authz
 
 # from volttron.platform.certs import Certs
 # from volttron.platform.vip.agent.errors import VIPError
@@ -136,7 +139,7 @@ class AuthFileAuthentication(Authenticator):
         return identity
 
 
-@authservice
+@service
 #class AuthService(ServiceInterface):
 class AuthService(AbstractAuthService, Agent):
 
@@ -151,31 +154,34 @@ class AuthService(AbstractAuthService, Agent):
         self._authenticator = authenticator
         self._credentials_store = credentials_store
         self._credentials_creator = credentials_creator
+        self._authz_manager = authz_manager
         #    def __init__(self, options: ServerOptions, **kwargs):    # options: ServerOptions, **kwargs):
         #kwargs.pop("identity", None)
-        server_config = server_options
         #auth_file, protected_topics_file, setup_mode, aip, *args, **kwargs):
+        volttron_services = {CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM}
+        if self._authz_manager is not None:
+            self._authz_manager.create_or_merge_role(
+                name="admin",
+                rpc_capabilities = authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
+                pubsub_capabilities= authz.PubsubCapabilities([
+                    authz.RPCCapability(topic_patter="*", topic_access="pubsub")])
+            )
 
-        roles = authz_manager.getall()
+            self._authz_manager.create_or_merge_user_group(name="admin_users",
+                                                           users=volttron_services,
+                                                           roles={"admin"})
 
-        if not roles:
-            authz_manager.create(role="admin", action="all", resource="all")
-
-        for k in (CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, "server"):
+        for k in (CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM):
             try:
                 self._credentials_store.retrieve_credentials(identity=k)
-                authz_manager.apply_role(identity=k, role="admin")
             except IdentityNotFound:
                 self._credentials_store.store_credentials(credentials=self._credentials_creator.create(identity=k))
-                authz_manager.apply_role(identity=k, role="admin")
 
         my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
 
         super().__init__(credentials=my_creds, address=server_options.service_address)
 
-
-
-        self._server_config = server_config
+        self._server_config = server_options
         # This agent is started before the router so we need
         # to keep it from blocking.
         self.core.delay_running_event_set = False
@@ -896,6 +902,60 @@ class AuthService(AbstractAuthService, Agent):
         :rtype: list
         """
         return self._get_authorizations(user_id, 2)
+
+    @RPC.export
+    def is_authorized(self, *, identity: authz.Identity, resource: Any, action: Any, **kwargs) -> bool:
+        ...
+
+    @RPC.export
+    def create_or_merge_role(self,
+                             *,
+                             name: str,
+                             rpc_capabilities: authz.RPCCapabilities,
+                             pubsub_capabilities: authz.PubsubCapabilities,
+                             **kwargs) -> bool:
+        ...
+
+    @RPC.export
+    def create_or_merge_user_group(self, *, name: str,
+                                   users: set[authz.Identity],
+                                   roles: set[authz.role_name],
+                                   rpc_capabilities: authz.RPCCapabilities,
+                                   pubsub_capabilities: authz.PubsubCapabilities,
+                                   **kwargs) -> bool:
+        ...
+
+    @RPC.export
+    def create_or_merge_user_authz(self, *, identity: authz.Identity,
+                                   protected_rpcs: set[authz.vipid_dot_rpc_method],
+                                   roles: set[authz.role_name],
+                                   rpc_capabilities: authz.RPCCapabilities,
+                                   pubsub_capabilities: authz.PubsubCapabilities,
+                                   comments: str | None,
+                                   domain: str | None,
+                                   address: str | None,
+                                   **kwargs) -> bool:
+        ...
+
+    @RPC.export
+    def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
+        ...
+
+    @RPC.export
+    def remove_protected_topic(self, *, topic_name_patter: str) -> bool:
+        ...
+
+    @RPC.export
+    def remove_user(self, name: authz.Identity):
+        ...
+
+    @RPC.export
+    def remove_user_group(self, name: str):
+        ...
+
+    @RPC.export
+    def remove_role(self, name: str):
+        ...
 
     def _update_auth_entry(self, domain, address, mechanism, credential, user_id, is_allow=True):
         # Make a new entry
