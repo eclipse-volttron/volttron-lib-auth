@@ -1,186 +1,160 @@
 from __future__ import annotations
 
 import json
-import re
-from copy import copy
+import os.path
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import volttron.types.auth.authz_types as authz
 from volttron.server.server_options import ServerOptions
-from volttron.types.auth import AuthorizationManager
+from volttron.types.auth.auth_service import AuthorizationManager, AuthzPersistence
 
 
-class FileBasedPersistence:
+class FileBasedPersistence(AuthzPersistence):
 
-    def store_to_file(self, filename: str):
-        print(self.to_json(indent=2))
-        print(filename)
+    @classmethod
+    def store(cls, authz_map: authz.VolttronAuthzMap, **kwargs) -> bool:
+        filename = kwargs.get("filename", "authz.json")
         filepath = Path(filename)
-        filepath.open("w").write(self.to_json(indent=2))
+        filepath.open("w").write(authz.authz_converter(authz_map))
 
-    @staticmethod
-    def load_from_file(filename: str) -> authz.VolttronAuthzMap:
-        with open(filename, "r") as f:
-            auth_map = json.load(f)
-
-        protected_topics = authz.ProtectedTopics(auth_map.get("protected_topics"))
-
-        # Build Roles
-        roles = set()
-        rpc_obj_list = authz.RPCCapabilities()
-        pubsub_obj_list = authz.PubsubCapabilities()
-        for role_name, value in auth_map.get("roles", dict()).items():
-            for r in value.get("rpc_capabilities"):
-                if isinstance(r, str):
-                    rpc_obj_list.add_rpc_capability(authz.RPCCapability(r))
-                elif isinstance((r, dict)):
-                    resource = list(r.keys())[0]
-                    param_restrict = r[resource]
-                    rpc_obj_list.add_rpc_capability(authz.RPCCapability(resource, param_restrict))
-            for topic_pattern, access in value.get("pubsub_capabilities", dict()).items():
-                pubsub_obj_list.add_pubsub_capability(authz.PubsubCapability(topic_pattern, access))
-            roles.add(authz.Role(role_name, rpc_capabilities=rpc_obj_list, pubsub_capabilities=pubsub_obj_list))
-        authz_roles = authz.Roles(roles)
-
-        return authz.VolttronAuthzMap(protected_topics=protected_topics,
-                                      roles=authz_roles)
+    @classmethod
+    def load(cls, filename: str, **kwargs) -> authz.VolttronAuthzMap:
+        if os.path.isfile(filename):
+            with open(filename, "r") as f:
+                authz_compact_dict = json.load(f)
+            return authz.VolttronAuthzMap.from_unstructured_dict(authz_compact_dict)
+        else:
+            # why can't I call without params
+            return authz.VolttronAuthzMap(None, None, None, None, None)
 
 
-
-#@service
+# @service
 class VolttronAuthzManager(AuthorizationManager):
 
     def __init__(self,
                  *,
                  options: ServerOptions,
-                 persistence: Optional[FileBasedPersistence] = None,
+                 persistence: AuthzPersistence = None,
                  **kwargs):
-
         if persistence is None:
-            persistence = FileBasedPersistence.load_from_file(options.volttron_home / "auth_map.json")
+            persistence = FileBasedPersistence
 
-        self._auth_map_file = (options.volttron_home / "auth_map.json").as_posix()
-        self._persistence = persistence
-        self._identity_rule_map: dict[str, set[AccessRule]] = persistence.identity_rule_map
-        self._identity_roles_map: dict[str, set[AccessRule]] = persistence.identity_role_map
-        self._role_rule_map: dict[str, set[AccessRule]] = persistence.role_rule_map
+        auth_map_file = (options.volttron_home / "authz.json").as_posix()
 
-    def store_to_file(self):
-        self._persistence.store_to_file(self._auth_map_file)
+        self._authz_map = persistence.load(auth_map_file)
+        self.authz_users_dict = dict()  # TODO expand user capabilites based on roles, groups
 
-    def identity_has_role(self, *, identity: str, role: str) -> bool:
-        if role_set := self._identity_roles_map.get(identity):
-            return role in role_set
-        return False
+    def create_or_merge_role(self, *, name: str, rpc_capabilities: Optional[authz.RPCCapabilities] = None,
+                             pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
+        return self._authz_map.create_merge_role(name=name,
+                                                 rpc_capabilities=rpc_capabilities,
+                                                 pubsub_capabilities=pubsub_capabilities)
 
-    def is_a_role(self, *, role: str) -> bool:
-        return role in self._roles
+    def create_or_merge_user_group(self, *, name: str, identities: set[authz.Identity],
+                                   roles: Optional[set[authz.role_name]] = None,
+                                   rpc_capabilities: Optional[authz.RPCCapabilities] = None,
+                                   pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
+        return self._authz_map.create_or_merge_user_group(name=name, identities=identities, roles=roles,
+                                                          rpc_capabilities=rpc_capabilities,
+                                                          pubsub_capabilities=pubsub_capabilities)
 
+    def create_or_merge_user_authz(self, *, identity: str,
+                                   protected_rpcs: Optional[set[authz.vipid_dot_rpc_method]] = None,
+                                   roles: Optional[set[authz.role_name]] = None,
+                                   rpc_capabilities: Optional[authz.RPCCapabilities] = None,
+                                   pubsub_capabilities: Optional[authz.PubsubCapabilities] = None,
+                                   comments: Optional[str] = None,
+                                   domain: Optional[str] = None,
+                                   address: Optional[str] = None, **kwargs) -> bool:
+        return self._authz_map.create_or_merge_user_authz(identity=identity, protected_rpcs=protected_rpcs,
+                                                          roles=roles, rpc_capabilities=rpc_capabilities,
+                                                          pubsub_capabilities=pubsub_capabilities,
+                                                          comments=comments, domain=domain, address=address)
 
-    def assign_identity_to_rule(self, *, identity: str, rule: AccessRule):
-        if identity not in self._identity_rule_map:
-            self._identity_rule_map[identity] = set()
+    def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
+        return self._authz_map.create_protected_topic(topic_name_pattern=topic_name_pattern)
 
-        self._identity_rule_map[identity].add(rule)
-        self.store_to_file()
+    def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
+        return self._authz_map.remove_protected_topic(topic_name_pattern=topic_name_pattern)
 
-    def assign_identity_to_role(self, *, role: str, identity: str):
-        if role not in self._role_rule_map:
-            raise ValueError(f"Unknown role: {role}")
+    def remove_user(self, identity: authz.Identity):
+        return self._authz_map.remove_user(identity=identity)
 
-        if identity not in self._identity_roles_map:
-            self._identity_roles_map[identity] = set()
+    def remove_user_group(self, name: str):
+        return self._authz_map.remove_user_group(name=name)
 
-        self._identity_roles_map[identity].add(role)
-        self.store_to_file()
-
-    def assign_rule_to_role(self, *, role: str, rule: AccessRule):
-        if role not in self._role_rule_map:
-            self._role_rule_map[role] = set()
-        self._role_rule_map[role].add(rule)
-        self.store_to_file()
-
-    def apply_role(self, identity: str, role: str):
-        if identity not in self._identity_roles_map:
-            self._identity_roles_map[identity] = set()
-        self._identity_roles_map[identity].add(role)
-        self.store_to_file()
-
-    # def create_rule(self, *, resource: str, action: str, role: str, filter: str = None):
-    #     role = self._role_map.get_role(role)
-
-    def create_access_rule(self,
-                           *,
-                           resource: str,
-                           action: str,
-                           filter: Optional[str | re.Pattern[str]] = None) -> AccessRule:
-        return AccessRule(resource=resource, action=action, filter=filter)
-
-    def create(self, *, role: str, action: str, filter: Optional[str | re.Pattern[str]] = None, resource: Any, **kwargs) -> None:
-        rule = self.create_access_rule(resource=resource, action=action, filter=filter)
-        self.assign_rule_to_role(role=role, rule=rule)
-
-    def delete(self, *, role: str, action: str, filter: str | re.Pattern[str], resource: any, **kwargs) -> any:
-        raise NotImplementedError("Needs to be implemented")
-
-    def has_role(self, identity: str, role: str) -> bool:
-        return role in self._identity_roles_map.get(identity, set())
-
-    def getall(self) -> list:
-        return list(self._identity_roles_map)
+    def remove_role(self, name: str):
+        return self._authz_map.remove_role(name=name)
 
 
 if __name__ == '__main__':
+    options = ServerOptions()
+    manager = VolttronAuthzManager(options=options)
 
-    # options = ServerOptions()
-    #
-    # persister = IdentityRoleMapPersistence.load_from_file(options.volttron_home / "auth_map.json")
-    #
-    # manager = VolttronAuthzManager(options=options, persistence=persister)
-    #
-    # credstoreaccessrule = manager.create_access_rule(resource="credstore", action="*", filter="identity=foo")
-    # rule = manager.create_access_rule(resource="*", action="*")
-    # manager.assign_rule_to_role(role="admin", rule=rule)
-    # manager.assign_identity_to_role(role="admin", identity=CONFIGURATION_STORE)
-    # manager.assign_identity_to_role(role="admin", identity=AUTH)
-    # manager.assign_identity_to_role(role="admin", identity=CONTROL)
-    #
-    # rule2 = manager.create_access_rule(resource="platform.historian", action="query", filter="devices/*")
-    # manager.assign_identity_to_rule(identity="can_call_bar", rule=rule2)
-    # #manager.create_access_rule(resource="config_store", action="edit", filter="/.*/")
-    #
-    # persister.store_to_file(options.volttron_home / "auth_map.json")
-    filename = "input.json"
-    with open(filename, "r") as f:
-        auth_map = json.load(f)
+    manager.create_protected_topic(topic_name_pattern="devices/*")
+    print(manager._authz_map.compact_dict)
+    manager.create_or_merge_role(name="test_role",
+                                 rpc_capabilities=authz.RPCCapabilities(
+                                     [authz.RPCCapability(resource="id1.rpc1")]),
+                                 pubsub_capabilities=authz.PubsubCapabilities([])
+                                 )
+    manager.create_or_merge_role(name="test_role",
+                                 rpc_capabilities=authz.RPCCapabilities(
+                                     [authz.RPCCapability(resource="id1.rpc1")]),
+                                 pubsub_capabilities=authz.PubsubCapabilities([])
+                                 )
+    manager.create_or_merge_role(name="test_role",
+                                 rpc_capabilities=authz.RPCCapabilities(
+                                     [authz.RPCCapability(resource="id1.rpc2")])
+                                 )
+    print(manager._authz_map.compact_dict)
 
-    protected_topics = authz.ProtectedTopics(auth_map.get("protected_topics"))
+    manager.create_or_merge_user_group(name="group1",
+                                       identities=("test1", "test2"),
+                                       pubsub_capabilities=authz.PubsubCapabilities([
+                                           authz.PubsubCapability(topic_access="publish", topic_pattern="/devices/*")
+                                       ]))
+    manager.create_or_merge_user_group(name="group1",
+                                       identities=("test1", "test2"),
+                                       pubsub_capabilities=authz.PubsubCapabilities([
+                                           authz.PubsubCapability(topic_access="publish", topic_pattern="/devices/*")
+                                       ]))
+    print(manager._authz_map.compact_dict)
+    manager.create_or_merge_user_group(name="group1",
+                                       identities=("test1", "test2"),
+                                       pubsub_capabilities=authz.PubsubCapabilities([
+                                           authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
+                                       ]))
+    print(manager._authz_map.compact_dict)
+    manager.create_or_merge_user_group(name="group1",
+                                       identities=("test1", "test2"),
+                                       rpc_capabilities=authz.RPCCapabilities([
+                                           authz.RPCCapability(resource="vip1.rpc2")
+                                       ]))
 
-    # Build Roles
-    roles = list()
-    for role_name, value in auth_map.get("roles", dict()).items():
-        rpc_obj_list = authz.RPCCapabilities()
-        pubsub_obj_list = authz.PubsubCapabilities(list())
-        for r in value.get("rpc_capabilities"):
-            if isinstance(r, str):
-                rpc_obj_list.add_rpc_capability(authz.RPCCapability(r))
-            elif isinstance((r, dict)):
-                resource = copy(list(r.keys())[0])
-                param_restrict = copy(r[resource])
-                rpc_obj_list.add_rpc_capability(authz.RPCCapability(resource, param_restrict))
-            print(role_name, r, id(rpc_obj_list.rpc_capabilities[-1]))
-        for topic_pattern, access in value.get("pubsub_capabilities", dict()).items():
-            pubsub_obj_list.add_pubsub_capability(authz.PubsubCapability(topic_pattern, access))
-        r_obj = authz.Role(role_name, rpc_capabilities=rpc_obj_list, pubsub_capabilities=pubsub_obj_list)
-        roles.append(r_obj)
-        print(id(r_obj))
-        print(authz.authz_converter.unstructure(r_obj))
-    authz_roles = authz.Roles(roles)
+    print(manager._authz_map.compact_dict)
 
-    result = authz.VolttronAuthzMap(protected_topics=protected_topics,
-                                    roles=authz_roles)
+    manager.create_or_merge_user_authz(identity="platform.historian")
+    print(manager._authz_map.compact_dict)
+    manager.create_or_merge_user_authz(identity="platform.historian",
+                                       rpc_capabilities=authz.RPCCapabilities([
+                                           authz.RPCCapability(resource="vip1.rpc2")
+                                       ])
+                                       )
+    print(manager._authz_map.compact_dict)
+    manager.create_or_merge_user_authz(identity="platform.historian",
+                                       rpc_capabilities=authz.RPCCapabilities([
+                                           authz.RPCCapability(resource="vip1.rpc2")
+                                       ]),
+                                       protected_rpcs={"query"}
+                                       )
+    manager.create_or_merge_user_authz(identity="platform.driver",
+                                       pubsub_capabilities=authz.PubsubCapabilities([
+                                           authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
+                                       ])
+                                       )
+    print(manager._authz_map.compact_dict.get("users"))
 
-    print(json.dumps(authz.authz_converter.unstructure(result.roles), indent=4))
-    print(json.dumps(authz.authz_converter.unstructure(result.protected_topics), indent=4))
-    #print(authz.authz_converter.unstructure(result))
+
+

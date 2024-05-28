@@ -24,7 +24,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AuthService", "AuthFile", "AuthEntry", "AuthFileEntryAlreadyExists", "AuthFileIndexError", "AuthException"]
+__all__ = ["VolttronAuthService", "AuthFile", "AuthEntry", "AuthFileEntryAlreadyExists", "AuthFileIndexError", "AuthException"]
 
 import bisect
 import logging
@@ -57,7 +57,7 @@ from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsStore,
                                                   IdentityNotFound,
                                                   PKICredentials)
-from volttron.types.auth.auth_service import (AbstractAuthService,
+from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types.bases import Service
@@ -141,30 +141,28 @@ class AuthFileAuthentication(Authenticator):
 
 @service
 #class AuthService(ServiceInterface):
-class AuthService(AbstractAuthService, Agent):
+class VolttronAuthService(AuthService, Agent):
 
     class Meta:
         identity = AUTH
 
-    def __init__(self, *, credentials_store: CredentialsStore, authorizer: Authorizer, authenticator: Authenticator,
-                 authz_manager: AuthorizationManager, credentials_creator: CredentialsCreator,
-                 server_options: ServerOptions):
+    def __init__(self, *, credentials_store: CredentialsStore, credentials_creator: CredentialsCreator,
+                 authenticator: Authenticator,
+                 authorizer: Authorizer, authz_manager: AuthorizationManager, server_options: ServerOptions):
 
         self._authorizer = authorizer
         self._authenticator = authenticator
         self._credentials_store = credentials_store
         self._credentials_creator = credentials_creator
         self._authz_manager = authz_manager
-        #    def __init__(self, options: ServerOptions, **kwargs):    # options: ServerOptions, **kwargs):
-        #kwargs.pop("identity", None)
-        #auth_file, protected_topics_file, setup_mode, aip, *args, **kwargs):
+
         volttron_services = {CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM}
         if self._authz_manager is not None:
             self._authz_manager.create_or_merge_role(
                 name="admin",
-                rpc_capabilities = authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
-                pubsub_capabilities= authz.PubsubCapabilities([
-                    authz.RPCCapability(topic_patter="*", topic_access="pubsub")])
+                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
+                pubsub_capabilities=authz.PubsubCapabilities([
+                    authz.PubsubCapability(topic_pattern="*", topic_access="pubsub")])
             )
 
             self._authz_manager.create_or_merge_user_group(name="admin_users",
@@ -878,7 +876,7 @@ class AuthService(AbstractAuthService, Agent):
         return self._get_authorizations(user_id, 0)
 
     @RPC.export
-    def get_groups(self, user_id):
+    def get_user_groups(self, user_id):
         """RPC method
 
         Gets groups for a given user.
@@ -914,7 +912,8 @@ class AuthService(AbstractAuthService, Agent):
                              rpc_capabilities: authz.RPCCapabilities,
                              pubsub_capabilities: authz.PubsubCapabilities,
                              **kwargs) -> bool:
-        ...
+        return self._authz_manager.create_or_merge_role(name=name, rpc_capabilities=rpc_capabilities,
+                                                        pubsub_capabilities=pubsub_capabilities, **kwargs)
 
     @RPC.export
     def create_or_merge_user_group(self, *, name: str,
@@ -923,7 +922,13 @@ class AuthService(AbstractAuthService, Agent):
                                    rpc_capabilities: authz.RPCCapabilities,
                                    pubsub_capabilities: authz.PubsubCapabilities,
                                    **kwargs) -> bool:
-        ...
+        return self._authz_manager.create_or_merge_user_group(name=name,
+                                                              users=users,
+                                                              roles=roles,
+                                                              rpc_capabilities=rpc_capabilities,
+                                                              pubsub_capabilities=pubsub_capabilities,
+                                                              **kwargs)
+
 
     @RPC.export
     def create_or_merge_user_authz(self, *, identity: authz.Identity,
@@ -935,27 +940,35 @@ class AuthService(AbstractAuthService, Agent):
                                    domain: str | None,
                                    address: str | None,
                                    **kwargs) -> bool:
-        ...
+        return self._authz_manager.create_or_merge_user_authz(identity=identity,
+                                                              protected_rpcs=protected_rpcs,
+                                                              roles=roles,
+                                                              rpc_capabilities=rpc_capabilities,
+                                                              pubsub_capabilities=pubsub_capabilities,
+                                                              comments=comments,
+                                                              domain=domain,
+                                                              address=address,
+                                                              **kwargs)
 
     @RPC.export
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        ...
+        return self._authz_manager.create_protected_topic(topic_name_pattern=topic_name_pattern)
 
     @RPC.export
-    def remove_protected_topic(self, *, topic_name_patter: str) -> bool:
-        ...
+    def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
+        return self._authz_manager.remove_protected_topic(topic_name_pattern=topic_name_pattern)
 
     @RPC.export
-    def remove_user(self, name: authz.Identity):
-        ...
+    def remove_user(self, identity: authz.Identity):
+        return self._authz_manager.remove_user(identity=identity)
 
     @RPC.export
     def remove_user_group(self, name: str):
-        ...
+        return self._authz_manager.remove_user_group(name=name)
 
     @RPC.export
     def remove_role(self, name: str):
-        ...
+        return self._authz_manager.remove_role(name=name)
 
     def _update_auth_entry(self, domain, address, mechanism, credential, user_id, is_allow=True):
         # Make a new entry
