@@ -929,9 +929,15 @@ class VolttronAuthService(AuthService, Agent):
                                                               pubsub_capabilities=pubsub_capabilities,
                                                               **kwargs)
 
+    @RPC.export
+    def remove_users_from_group(self, name: str, identities: set[authz.Identity]):
+        return self._authz_manager.remove_users_from_group(name, identities)
 
     @RPC.export
-    def create_or_merge_user_authz(self, *, identity: authz.Identity,
+    def add_users_to_group(self, name: str, identities: set[authz.Identity]):
+        return self._authz_manager.add_users_to_group(name, identities)
+    @RPC.export
+    def create_or_merge_user(self, *, identity: authz.Identity,
                                    protected_rpcs: set[authz.vipid_dot_rpc_method],
                                    roles: set[authz.role_name],
                                    rpc_capabilities: authz.RPCCapabilities,
@@ -940,7 +946,7 @@ class VolttronAuthService(AuthService, Agent):
                                    domain: str | None,
                                    address: str | None,
                                    **kwargs) -> bool:
-        return self._authz_manager.create_or_merge_user_authz(identity=identity,
+        return self._authz_manager.create_or_merge_user(identity=identity,
                                                               protected_rpcs=protected_rpcs,
                                                               roles=roles,
                                                               rpc_capabilities=rpc_capabilities,
