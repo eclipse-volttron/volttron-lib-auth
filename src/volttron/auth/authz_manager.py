@@ -14,9 +14,10 @@ class FileBasedPersistence(AuthzPersistence):
 
     @classmethod
     def store(cls, authz_map: authz.VolttronAuthzMap, **kwargs) -> bool:
-        filename = kwargs.get("filename", "authz.json")
-        filepath = Path(filename)
-        filepath.open("w").write(authz.authz_converter(authz_map))
+        file = kwargs.get("file", "authz.json")
+        filepath = Path(file)
+        filepath.open("w").write(authz_map.compact_dict)
+        return True
 
     @classmethod
     def load(cls, filename: str, **kwargs) -> authz.VolttronAuthzMap:
@@ -38,28 +39,41 @@ class VolttronAuthzManager(AuthorizationManager):
                  **kwargs):
         if persistence is None:
             persistence = FileBasedPersistence
-
-        self._authz_map = persistence.load((options.volttron_home / "authz.json").as_posix())
+        self.persistence = persistence
+        self.authz_path = (options.volttron_home / "authz.json").as_posix()
+        self._authz_map = persistence.load(self.authz_path)
 
     def create_or_merge_role(self, *, name: str, rpc_capabilities: Optional[authz.RPCCapabilities] = None,
                              pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
-        return self._authz_map.create_or_merge_role(name=name,
-                                                 rpc_capabilities=rpc_capabilities,
-                                                 pubsub_capabilities=pubsub_capabilities)
+        result = self._authz_map.create_or_merge_role(name=name,
+                                                      rpc_capabilities=rpc_capabilities,
+                                                      pubsub_capabilities=pubsub_capabilities)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def create_or_merge_user_group(self, *, name: str, identities: set[authz.Identity],
                                    roles: Optional[set[authz.role_name]] = None,
                                    rpc_capabilities: Optional[authz.RPCCapabilities] = None,
                                    pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
-        return self._authz_map.create_or_merge_user_group(name=name, identities=identities, roles=roles,
-                                                          rpc_capabilities=rpc_capabilities,
-                                                          pubsub_capabilities=pubsub_capabilities)
+        result = self._authz_map.create_or_merge_user_group(name=name, identities=identities, roles=roles,
+                                                            rpc_capabilities=rpc_capabilities,
+                                                            pubsub_capabilities=pubsub_capabilities)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def remove_users_from_group(self, name: str, identities: set[authz.Identity]):
-        return self._authz_map.remove_users_from_group(name, identities)
+        result = self._authz_map.remove_users_from_group(name, identities)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def add_users_to_group(self, name: str, identities: set[authz.Identity]):
-        return self._authz_map.add_users_to_group(name, identities)
+        result = self._authz_map.add_users_to_group(name, identities)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def create_or_merge_user(self, *, identity: str,
                                    protected_rpcs: Optional[set[authz.vipid_dot_rpc_method]] = None,
@@ -69,25 +83,43 @@ class VolttronAuthzManager(AuthorizationManager):
                                    comments: Optional[str] = None,
                                    domain: Optional[str] = None,
                                    address: Optional[str] = None, **kwargs) -> bool:
-        return self._authz_map.create_or_merge_user(identity=identity, protected_rpcs=protected_rpcs,
+        result = self._authz_map.create_or_merge_user(identity=identity, protected_rpcs=protected_rpcs,
                                                           roles=roles, rpc_capabilities=rpc_capabilities,
                                                           pubsub_capabilities=pubsub_capabilities,
                                                           comments=comments, domain=domain, address=address)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        return self._authz_map.create_protected_topic(topic_name_pattern=topic_name_pattern)
+        result = self._authz_map.create_protected_topic(topic_name_pattern=topic_name_pattern)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        return self._authz_map.remove_protected_topic(topic_name_pattern=topic_name_pattern)
+        result = self._authz_map.remove_protected_topic(topic_name_pattern=topic_name_pattern)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def remove_user(self, identity: authz.Identity):
-        return self._authz_map.remove_user(identity=identity)
+        result = self._authz_map.remove_user(identity=identity)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def remove_user_group(self, name: str):
-        return self._authz_map.remove_user_group(name=name)
+        result = self._authz_map.remove_user_group(name=name)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
     def remove_role(self, name: str):
-        return self._authz_map.remove_role(name=name)
+        result = self._authz_map.remove_role(name=name)
+        if result:
+            self.persistence.store(self._authz_map, file=self.authz_path)
+        return result
 
 
 if __name__ == '__main__':
