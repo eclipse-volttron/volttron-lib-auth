@@ -53,7 +53,7 @@ class VolttronAuthzManager(AuthorizationManager):
         return result
 
     def create_or_merge_user_group(self, *, name: str, identities: set[authz.Identity],
-                                   roles: Optional[set[authz.role_name]] = None,
+                                   roles: Optional[authz.UserRoles] = None,
                                    rpc_capabilities: Optional[authz.RPCCapabilities] = None,
                                    pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
         result = self._authz_map.create_or_merge_user_group(name=name, identities=identities, roles=roles,
@@ -75,18 +75,14 @@ class VolttronAuthzManager(AuthorizationManager):
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def create_or_merge_user(self, *, identity: str,
-                                   protected_rpcs: Optional[set[authz.vipid_dot_rpc_method]] = None,
-                                   roles: Optional[set[authz.role_name]] = None,
-                                   rpc_capabilities: Optional[authz.RPCCapabilities] = None,
-                                   pubsub_capabilities: Optional[authz.PubsubCapabilities] = None,
-                                   comments: Optional[str] = None,
-                                   domain: Optional[str] = None,
-                                   address: Optional[str] = None, **kwargs) -> bool:
+    def create_or_merge_user(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
+                             roles: authz.UserRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+                             pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
+                             domain: str = None, address: str = None, **kwargs) -> bool:
         result = self._authz_map.create_or_merge_user(identity=identity, protected_rpcs=protected_rpcs,
-                                                          roles=roles, rpc_capabilities=rpc_capabilities,
-                                                          pubsub_capabilities=pubsub_capabilities,
-                                                          comments=comments, domain=domain, address=address)
+                                                      roles=roles, rpc_capabilities=rpc_capabilities,
+                                                      pubsub_capabilities=pubsub_capabilities,
+                                                      comments=comments, domain=domain, address=address)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
@@ -150,19 +146,19 @@ if __name__ == '__main__':
                                            authz.PubsubCapability(topic_access="publish", topic_pattern="/devices/*")
                                        ]))
     manager.create_or_merge_user_group(name="group1",
-                                       identities=("test1", "test2"),
+                                       identities={"test1", "test2"},
                                        pubsub_capabilities=authz.PubsubCapabilities([
                                            authz.PubsubCapability(topic_access="publish", topic_pattern="/devices/*")
                                        ]))
     print(manager._authz_map.compact_dict)
     manager.create_or_merge_user_group(name="group1",
-                                       identities=("test1", "test2"),
+                                       identities={"test1", "test2"},
                                        pubsub_capabilities=authz.PubsubCapabilities([
                                            authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
                                        ]))
     print(manager._authz_map.compact_dict)
     manager.create_or_merge_user_group(name="group1",
-                                       identities=("test1", "test2"),
+                                       identities={"test1", "test2"},
                                        rpc_capabilities=authz.RPCCapabilities([
                                            authz.RPCCapability(resource="vip1.rpc2")
                                        ]))
@@ -172,23 +168,20 @@ if __name__ == '__main__':
     manager.create_or_merge_user(identity="platform.historian")
     print(manager._authz_map.compact_dict)
     manager.create_or_merge_user(identity="platform.historian",
-                                       rpc_capabilities=authz.RPCCapabilities([
-                                           authz.RPCCapability(resource="vip1.rpc2")
-                                       ])
-                                       )
+                                 rpc_capabilities=authz.RPCCapabilities([
+                                     authz.RPCCapability(resource="vip1.rpc2")
+                                 ])
+                                 )
     print(manager._authz_map.compact_dict)
     manager.create_or_merge_user(identity="platform.historian",
-                                       rpc_capabilities=authz.RPCCapabilities([
-                                           authz.RPCCapability(resource="vip1.rpc2")
-                                       ]),
-                                       protected_rpcs={"query"}
-                                       )
+                                 rpc_capabilities=authz.RPCCapabilities([
+                                     authz.RPCCapability(resource="vip1.rpc2")
+                                 ]),
+                                 protected_rpcs={"query"}
+                                 )
     manager.create_or_merge_user(identity="platform.driver",
-                                       pubsub_capabilities=authz.PubsubCapabilities([
-                                           authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
-                                       ])
-                                       )
+                                 pubsub_capabilities=authz.PubsubCapabilities([
+                                     authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
+                                 ])
+                                 )
     print(manager._authz_map.compact_dict.get("users"))
-
-
-
