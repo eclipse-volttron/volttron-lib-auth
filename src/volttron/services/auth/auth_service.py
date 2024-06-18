@@ -918,9 +918,9 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def create_or_merge_user_group(self, *, name: str,
                                    users: set[authz.Identity],
-                                   roles: set[authz.role_name],
-                                   rpc_capabilities: authz.RPCCapabilities,
-                                   pubsub_capabilities: authz.PubsubCapabilities,
+                                   roles: authz.UserRoles = None,
+                                   rpc_capabilities: authz.RPCCapabilities = None,
+                                   pubsub_capabilities: authz.PubsubCapabilities = None,
                                    **kwargs) -> bool:
         return self._authz_manager.create_or_merge_user_group(name=name,
                                                               users=users,
@@ -936,25 +936,21 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def add_users_to_group(self, name: str, identities: set[authz.Identity]):
         return self._authz_manager.add_users_to_group(name, identities)
+
     @RPC.export
-    def create_or_merge_user(self, *, identity: authz.Identity,
-                                   protected_rpcs: set[authz.vipid_dot_rpc_method],
-                                   roles: set[authz.role_name],
-                                   rpc_capabilities: authz.RPCCapabilities,
-                                   pubsub_capabilities: authz.PubsubCapabilities,
-                                   comments: str | None,
-                                   domain: str | None,
-                                   address: str | None,
-                                   **kwargs) -> bool:
+    def create_or_merge_user(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
+                             roles: authz.UserRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+                             pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
+                             domain: str = None, address: str = None, **kwargs) -> bool:
         return self._authz_manager.create_or_merge_user(identity=identity,
-                                                              protected_rpcs=protected_rpcs,
-                                                              roles=roles,
-                                                              rpc_capabilities=rpc_capabilities,
-                                                              pubsub_capabilities=pubsub_capabilities,
-                                                              comments=comments,
-                                                              domain=domain,
-                                                              address=address,
-                                                              **kwargs)
+                                                        protected_rpcs=protected_rpcs,
+                                                        roles=roles,
+                                                        rpc_capabilities=rpc_capabilities,
+                                                        pubsub_capabilities=pubsub_capabilities,
+                                                        comments=comments,
+                                                        domain=domain,
+                                                        address=address,
+                                                        **kwargs)
 
     @RPC.export
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:

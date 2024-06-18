@@ -27,7 +27,7 @@ dataclass-wizard = "^0.22.3"
 
 [tool.poetry.group.dev.dependencies]
 # formatting, quality, tests
-#volttron-test-utils = { path="../volttron-test-utils", develop = true}
+volttron-testing = { path="../volttron-testing", develop = true}
 
 
 [build-system]
