@@ -24,7 +24,7 @@
 
 from __future__ import annotations
 
-__all__ = ["VolttronAuthService", "AuthFile", "AuthEntry", "AuthFileEntryAlreadyExists", "AuthFileIndexError", "AuthException"]
+__all__ = ["VolttronAuthService"]
 
 import bisect
 import logging
@@ -47,10 +47,10 @@ from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
-from volttron.server.containers import service_repo
-from volttron.server.decorators import (authenticator, authorization_manager,
-                                        authorizer, authservice,
-                                        credentials_creator, credentials_store)
+# from volttron.server.containers import service_repo
+# from volttron.server.decorators import (authenticator, authorization_manager,
+#                                         authorizer, authservice,
+#                                         credentials_creator, credentials_store)
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsCreator,
@@ -61,14 +61,14 @@ from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types.bases import Service
-from volttron.types.service_interface import ServiceInterface
+#from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
 from volttron.utils.certs import Certs
 from volttron.utils.filewatch import watch_file
 from volttron.utils.keystore import BASE64_ENCODED_CURVE_KEY_LEN, encode_key
 from zmq import green as zmq
-from vottron.decorators import service
+from volttron.decorators import service
 import volttron.types.auth.authz_types as authz
 
 # from volttron.platform.certs import Certs
@@ -78,8 +78,8 @@ import volttron.types.auth.authz_types as authz
 # from .vip.agent import Agent, Core, RPC
 # from .vip.socket import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
 
-_log = logging.getLogger(__name__)
-_log.setLevel(logging.WARN)
+_log = logging.getLogger("auth_service")
+_log.setLevel(logging.DEBUG)
 
 _dump_re = re.compile(r"([,\\])")
 _load_re = re.compile(r"\\(.)|,")
@@ -107,8 +107,8 @@ class AuthException(Exception):
     pass
 
 
-@authorizer
-class AuthFileAuthorization(Authorizer):
+@service
+class AuthFileAuthorization(Service, Authorizer):
 
     def __init__(self, *, options: ServerOptions):
         self._auth = options.volttron_home / "auth.json"
@@ -118,8 +118,8 @@ class AuthFileAuthorization(Authorizer):
         return True
 
 
-@authenticator
-class AuthFileAuthentication(Authenticator):
+@service
+class AuthFileAuthentication(Service, Authenticator):
 
     def __init__(self, *, credentials_store: CredentialsStore, **kwargs):
         self._credstore = credentials_store
@@ -156,24 +156,28 @@ class VolttronAuthService(AuthService, Agent):
         self._credentials_creator = credentials_creator
         self._authz_manager = authz_manager
 
-        volttron_services = {CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM}
-        if self._authz_manager is not None:
-            self._authz_manager.create_or_merge_role(
-                name="admin",
-                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
-                pubsub_capabilities=authz.PubsubCapabilities([
-                    authz.PubsubCapability(topic_pattern="*", topic_access="pubsub")])
-            )
+        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM]
 
-            self._authz_manager.create_or_merge_user_group(name="admin_users",
-                                                           users=volttron_services,
-                                                           roles={"admin"})
-
-        for k in (CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM):
+        for k in volttron_services:
             try:
                 self._credentials_store.retrieve_credentials(identity=k)
             except IdentityNotFound:
                 self._credentials_store.store_credentials(credentials=self._credentials_creator.create(identity=k))
+
+        if self._authz_manager is not None:
+
+            self._authz_manager.create_or_merge_role(
+                name="admin",
+                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
+                pubsub_capabilities=authz.PubsubCapabilities(
+                    [authz.PubsubCapability(topic_pattern="*", topic_access="pubsub")]))
+
+            for k in volttron_services:
+                self._authz_manager.create_or_merge_user(identity=k, roles=["admin"], comments="Automatically added by init of auth service")
+
+            self._authz_manager.create_or_merge_user_group(name="admin_users",
+                                                           identities=volttron_services,
+                                                           roles=["admin"])
 
         my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
 
@@ -216,6 +220,9 @@ class VolttronAuthService(AuthService, Agent):
                           comments="Automatically added by init of auth service")
         AuthFile().add(entry, overwrite=True)
 
+    def client_connected(self, client_credentials: Credentials):
+        _log.debug(f"Client connected: {client_credentials}")
+
     def authenticate(self,
                      *,
                      credentials: Credentials,
@@ -257,6 +264,7 @@ class VolttronAuthService(AuthService, Agent):
 
     @Core.receiver("onsetup")
     def setup_zap(self, sender, **kwargs):
+        _log.debug("---------------------------------- SETTING UP ZAP!")
         self.zap_socket = zmq.Socket(zmq.Context.instance(), zmq.ROUTER)
         self.zap_socket.bind("inproc://zeromq.zap.01")
         # TODO: How do we want to do the permisive thing here.
@@ -406,11 +414,13 @@ class VolttronAuthService(AuthService, Agent):
         blocked = {}
         wait_list = []
         timeout = None
-        if self.core.messagebus == "rmq":
-            # Check the topic permissions of all the connected agents
-            self._check_rmq_topic_permissions()
-        else:
-            self._send_protected_update_to_pubsub(self._protected_topics)
+        _log.debug("Starting Zap Loop")
+        # TODO topic permissions?
+        # if self.core.messagebus == "rmq":
+        #     # Check the topic permissions of all the connected agents
+        #     self._check_rmq_topic_permissions()
+        # else:
+        #     self._send_protected_update_to_pubsub(self._protected_topics)
 
         while True:
             events = sock.poll(timeout)
@@ -506,6 +516,7 @@ class VolttronAuthService(AuthService, Agent):
             timeout = (wait_list[0][0] - now) if wait_list else None
 
     def authenticate(self, domain, address, mechanism, credentials):
+        _log.debug(f"AUTH: domain={domain}, address={address}, mechanism={mechanism}, credentials={credentials}")
         for entry in self.auth_entries:
             if entry.match(domain, address, mechanism, credentials):
                 return entry.user_id or dump_user(domain, address, mechanism, *credentials[:1])
@@ -519,8 +530,9 @@ class VolttronAuthService(AuthService, Agent):
             uid = int(parts[0])
             if uid == os.getuid():
                 return dump_user(domain, address, mechanism, *credentials[:1])
-        if self.allow_any:
-            return dump_user(domain, address, mechanism, *credentials[:1])
+        # TODO: Do we have an allow_any?
+        # if self.allow_any:
+        #     return dump_user(domain, address, mechanism, *credentials[:1])
 
     @RPC.export
     def get_user_to_capabilities(self):
@@ -1286,6 +1298,8 @@ class AuthEntry(object):
             self.capabilities.update(temp)
 
     def match(self, domain, address, mechanism, credentials):
+        if self.credentials.match(credentials[0]):
+            return True
         return ((self.domain is None or self.domain.match(domain))
                 and (self.address is None or self.address.match(address)) and self.mechanism == mechanism and
                 (self.mechanism == "NULL" or (len(self.credentials) > 0 and self.credentials.match(credentials[0]))))

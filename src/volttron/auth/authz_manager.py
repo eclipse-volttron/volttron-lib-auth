@@ -8,15 +8,16 @@ from typing import Optional
 import volttron.types.auth.authz_types as authz
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_service import AuthorizationManager, AuthzPersistence
+from volttron.decorators import service
 
-
+@service
 class FileBasedPersistence(AuthzPersistence):
 
     @classmethod
     def store(cls, authz_map: authz.VolttronAuthzMap, **kwargs) -> bool:
         file = kwargs.get("file", "authz.json")
         filepath = Path(file)
-        filepath.open("w").write(authz_map.compact_dict)
+        filepath.open("w").write(json.dumps(authz_map.compact_dict, indent=2))
         return True
 
     @classmethod
@@ -29,7 +30,7 @@ class FileBasedPersistence(AuthzPersistence):
             return authz.VolttronAuthzMap()
 
 
-# @service
+@service
 class VolttronAuthzManager(AuthorizationManager):
 
     def __init__(self,
