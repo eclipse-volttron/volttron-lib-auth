@@ -43,7 +43,8 @@ from gevent.fileobject import FileObject
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
                                               VOLTTRON_CENTRAL_PLATFORM,
-                                              PLATFORM)
+                                              PLATFORM,
+                                              PLATFORM_HEALTH)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
@@ -156,7 +157,7 @@ class VolttronAuthService(AuthService, Agent):
         self._credentials_creator = credentials_creator
         self._authz_manager = authz_manager
 
-        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM]
+        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH]
 
         for k in volttron_services:
             try:
