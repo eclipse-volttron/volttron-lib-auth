@@ -34,7 +34,7 @@ import re
 import shutil
 import uuid
 from collections import defaultdict
-from typing import Optional
+from typing import Optional, Any
 
 import gevent
 import gevent.core
@@ -62,7 +62,7 @@ from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types.bases import Service
-#from volttron.types.service_interface import ServiceInterface
+# from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
 from volttron.utils.certs import Certs
@@ -95,7 +95,6 @@ def dump_user(*args):
 
 
 def load_user(string):
-
     def sub(match):
         return match.group(1) or "\x00"
 
@@ -141,10 +140,8 @@ class AuthFileAuthorization(Service, Authorizer):
 
 
 @service
-#class AuthService(ServiceInterface):
+# class AuthService(ServiceInterface):
 class VolttronAuthService(AuthService, Agent):
-
-
     class Meta:
         identity = AUTH
 
@@ -169,17 +166,28 @@ class VolttronAuthService(AuthService, Agent):
         if self._authz_manager is not None:
 
             self._authz_manager.create_or_merge_role(
+                name="edit_config_store",
+                rpc_capabilities=authz.RPCCapabilities([
+                    authz.RPCCapability(resource="config.store.initialize_configs"),
+                    authz.RPCCapability(resource="config.store.set_config"),
+                    authz.RPCCapability(resource="config.store.delete_store"),
+                    authz.RPCCapability(resource="config.store.delete_config"),
+                ])
+            )
+            self._authz_manager.create_or_merge_role(
                 name="admin",
                 rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
                 pubsub_capabilities=authz.PubsubCapabilities(
                     [authz.PubsubCapability(topic_pattern="*", topic_access="pubsub")]))
 
             for k in volttron_services:
-                self._authz_manager.create_or_merge_user(identity=k, roles=["admin"], comments="Automatically added by init of auth service")
+                self._authz_manager.create_or_merge_user_authz(identity=k,
+                                                               comments="Automatically added by init of auth service")
 
             self._authz_manager.create_or_merge_user_group(name="admin_users",
-                                                           identities=volttron_services,
-                                                           roles=["admin"])
+                                                           identities=set(volttron_services),
+                                                           roles=authz.UserRoles(
+                                                               [authz.UserRole(role_name="admin")]), )
 
         my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
 
@@ -194,7 +202,6 @@ class VolttronAuthService(AuthService, Agent):
             self._certs = Certs()
         self.auth_file_path = (server_options.volttron_home / "auth.json").as_posix()
         self.auth_file = AuthFile(self.auth_file_path)
-        self.aip = self._server_config.aip
         self.zap_socket = None
         self._zap_greenlet = None
         self.auth_entries = []
@@ -203,7 +210,7 @@ class VolttronAuthService(AuthService, Agent):
         self._protected_topics_file = self._protected_topics_file_path
         self._protected_topics_for_rmq = ProtectedPubSubTopics()
         # TODO: setup_mode is not in options for right now this is a TODO for it.
-        self._setup_mode = False    #options.setup_mode
+        self._setup_mode = False  # options.setup_mode
         self._auth_pending = []
         self._auth_denied = []
         self._auth_approved = []
@@ -225,12 +232,34 @@ class VolttronAuthService(AuthService, Agent):
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
 
-    def authenticate(self,
-                     *,
-                     credentials: Credentials,
-                     address: str,
-                     domain: Optional[str] = None) -> Optional[Identity]:
-        return self._authenticator.authenticate(credentials=credentials, address=address, domain=domain)
+    def create_user(self, *, identity: str, **kwargs) -> bool:
+
+        try:
+            creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+        except IdentityNotFound as e:
+            # create new creds only if it doesn't exist
+            creds = self._credentials_creator.create(identity, **kwargs)
+            self._credentials_store.store_credentials(credentials=creds)
+
+        if not self._authz_manager.get_user_capabilities(identity=identity):
+            # create default only for new users
+            self._authz_manager.create_or_merge_user_authz(identity=identity,
+                                                           roles=authz.UserRoles([
+                                                               authz.UserRole("edit_config_store",
+                                                                              param_restrictions={"identity": identity})
+                                                           ]),
+                                                           comments="default authorization for new user")
+        return True
+
+    def get_user_capabilities(self, identity: str):
+        return self._authz_manager.get_user_capabilities(identity=identity)
+
+    # def authenticate(self,
+    #                  *,
+    #                  credentials: Credentials,
+    #                  address: str,
+    #                  domain: Optional[str] = None) -> Optional[Identity]:
+    #     return self._authenticator.authenticate(credentials=credentials, address=address, domain=domain)
 
     def has_credentials_for(self, *, identity: str) -> bool:
         return self.is_credentials(identity=identity)
@@ -261,8 +290,6 @@ class VolttronAuthService(AuthService, Agent):
 
     def is_role(self, role: str) -> bool:
         ...
-
-
 
     # @Core.receiver("onsetup")
     # def setup_zap(self, sender, **kwargs):
@@ -397,7 +424,7 @@ class VolttronAuthService(AuthService, Agent):
         if self.zap_socket is not None:
             self.zap_socket.unbind("inproc://zeromq.zap.01")
 
-    #@Core.receiver("onstart")
+    # @Core.receiver("onstart")
     # def zap_loop(self, sender, **kwargs):
     #     """
     #     The zap loop is the starting of the authentication process for
@@ -596,7 +623,7 @@ class VolttronAuthService(AuthService, Agent):
 
                 if (
                         "federation" in user_id
-                ):    # federation needs more than the current default permissions # TODO: Fix authorization in rabbitmq
+                ):  # federation needs more than the current default permissions # TODO: Fix authorization in rabbitmq
                     permissions = dict(configure=".*", read=".*", write=".*")
                 self.core.rmq_mgmt.create_user_with_permissions(user_id, permissions, True)
                 _log.debug("Created cert and permissions for user: {}".format(user_id))
@@ -952,19 +979,19 @@ class VolttronAuthService(AuthService, Agent):
         return self._authz_manager.add_users_to_group(name, identities)
 
     @RPC.export
-    def create_or_merge_user(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
-                             roles: authz.UserRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
-                             pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
-                             domain: str = None, address: str = None, **kwargs) -> bool:
-        return self._authz_manager.create_or_merge_user(identity=identity,
-                                                        protected_rpcs=protected_rpcs,
-                                                        roles=roles,
-                                                        rpc_capabilities=rpc_capabilities,
-                                                        pubsub_capabilities=pubsub_capabilities,
-                                                        comments=comments,
-                                                        domain=domain,
-                                                        address=address,
-                                                        **kwargs)
+    def create_or_merge_user_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
+                                   roles: authz.UserRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+                                   pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
+                                   **kwargs) -> bool:
+        return self._authz_manager.create_or_merge_user_authz(identity=identity,
+                                                              protected_rpcs=protected_rpcs,
+                                                              roles=roles,
+                                                              rpc_capabilities=rpc_capabilities,
+                                                              pubsub_capabilities=pubsub_capabilities,
+                                                              comments=comments,
+                                                              domain=domain,
+                                                              address=address,
+                                                              **kwargs)
 
     @RPC.export
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
@@ -975,8 +1002,8 @@ class VolttronAuthService(AuthService, Agent):
         return self._authz_manager.remove_protected_topic(topic_name_pattern=topic_name_pattern)
 
     @RPC.export
-    def remove_user(self, identity: authz.Identity):
-        return self._authz_manager.remove_user(identity=identity)
+    def remove_user_authorization(self, identity: authz.Identity):
+        return self._authz_manager.remove_user_authorization(identity=identity)
 
     @RPC.export
     def remove_user_group(self, name: str):
@@ -1067,7 +1094,7 @@ class VolttronAuthService(AuthService, Agent):
         # Get agent to capabilities mapping
         user_to_caps = self.get_user_to_capabilities()
         # Get topics to capabilities mapping
-        topic_to_caps = self._protected_topics_for_rmq.get_topic_caps()    # topic to caps
+        topic_to_caps = self._protected_topics_for_rmq.get_topic_caps()  # topic to caps
 
         peers = self.vip.peerlist().get(timeout=5)
         # _log.debug("USER TO CAPS: {0}, TOPICS TO CAPS: {1}, {2}".format(user_to_caps,
@@ -1213,18 +1240,18 @@ class AuthEntry(object):
     """
 
     def __init__(
-        self,
-        domain=None,
-        address=None,
-        mechanism="CURVE",
-        credentials=None,
-        user_id=None,
-        groups=None,
-        roles=None,
-        capabilities: Optional[dict] = None,
-        comments=None,
-        enabled=True,
-        **kwargs,
+            self,
+            domain=None,
+            address=None,
+            mechanism="CURVE",
+            credentials=None,
+            user_id=None,
+            groups=None,
+            roles=None,
+            capabilities: Optional[dict] = None,
+            comments=None,
+            enabled=True,
+            **kwargs,
     ):
 
         self.domain = AuthEntry._build_field(domain)
@@ -1240,7 +1267,7 @@ class AuthEntry(object):
         self.user_id = user_id
         self.enabled = enabled
         if kwargs:
-            _log.debug("auth record has unrecognized keys: %r" % (list(kwargs.keys()), ))
+            _log.debug("auth record has unrecognized keys: %r" % (list(kwargs.keys()),))
         self._check_validity()
 
     def __lt__(self, other):
