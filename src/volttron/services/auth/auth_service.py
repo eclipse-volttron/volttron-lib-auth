@@ -72,13 +72,6 @@ from zmq import green as zmq
 from volttron.decorators import service
 import volttron.types.auth.authz_types as authz
 
-# from volttron.platform.certs import Certs
-# from volttron.platform.vip.agent.errors import VIPError
-# from volttron.platform.vip.pubsubservice import ProtectedPubSubTopics
-# from .agent.utils import strip_comments, create_file_if_missing, watch_file, get_messagebus
-# from .vip.agent import Agent, Core, RPC
-# from .vip.socket import encode_key, BASE64_ENCODED_CURVE_KEY_LEN
-
 _log = logging.getLogger("auth_service")
 _log.setLevel(logging.DEBUG)
 
@@ -118,29 +111,8 @@ class AuthFileAuthorization(Service, Authorizer):
         return True
 
 
-# @service
-# class AuthFileAuthentication(Service, Authenticator):
-
-#     def __init__(self, *, credentials_store: CredentialsStore, **kwargs):
-#         self._credstore = credentials_store
-
-#     def authenticate(self, *, domain: str, address: str, credentials: Credentials) -> Optional[Identity]:
-#         identity = None
-
-#         if hasattr(credentials, "publickey"):
-#             try:
-#                 creds = self._credstore.retrieve_credentials_by_key(key="publickey",
-#                                                                     value=credentials.publickey,
-#                                                                     credentials_type=PKICredentials)
-#                 identity = creds.identity
-#             except KeyError:
-#                 # Happens if credentials aren't found.
-#                 pass
-#         return identity
-
 
 @service
-# class AuthService(ServiceInterface):
 class VolttronAuthService(AuthService, Agent):
     class Meta:
         identity = AUTH
@@ -197,37 +169,14 @@ class VolttronAuthService(AuthService, Agent):
         # This agent is started before the router so we need
         # to keep it from blocking.
         self.core.delay_running_event_set = False
-        self._certs = None
-        if cc.get_messagebus() == "rmq":
-            self._certs = Certs()
-        self.auth_file_path = (server_options.volttron_home / "auth.json").as_posix()
-        self.auth_file = AuthFile(self.auth_file_path)
-        self.zap_socket = None
-        self._zap_greenlet = None
-        self.auth_entries = []
         self._is_connected = False
-        self._protected_topics_file_path = (server_options.volttron_home / "protected_topics.json").as_posix()
-        self._protected_topics_file = self._protected_topics_file_path
-        self._protected_topics_for_rmq = ProtectedPubSubTopics()
+
         # TODO: setup_mode is not in options for right now this is a TODO for it.
-        self._setup_mode = False  # options.setup_mode
-        self._auth_pending = []
-        self._auth_denied = []
-        self._auth_approved = []
+        # self._setup_mode = False  # options.setup_mode
+        # self._auth_pending = []
+        # self._auth_denied = []
+        # self._auth_approved = []
 
-        def topics():
-            return defaultdict(set)
-
-        self._user_to_permissions = topics()
-        entry = AuthEntry(credentials=self.core.publickey,
-                          user_id=self.core.identity,
-                          capabilities=[{
-                              "edit_config_store": {
-                                  "identity": self.core.identity
-                              }
-                          }],
-                          comments="Automatically added by init of auth service")
-        AuthFile().add(entry, overwrite=True)
 
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
@@ -254,6 +203,10 @@ class VolttronAuthService(AuthService, Agent):
     def get_user_capabilities(self, identity: str):
         return self._authz_manager.get_user_capabilities(identity=identity)
 
+    def remove_user(self, *, identity: str, **kwargs) -> bool:
+        self._credentials_store.remove_credentials(identity=identity)
+        self._authz_manager.remove_user_authorization(identity=identity)
+        return True
     # def authenticate(self,
     #                  *,
     #                  credentials: Credentials,
