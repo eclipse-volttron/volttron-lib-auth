@@ -150,8 +150,14 @@ class VolttronAuthService(AuthService, Agent):
                     [authz.PubsubCapability(topic_pattern="*", topic_access="pubsub")]))
 
             for k in volttron_services:
-                self._authz_manager.create_or_merge_user_authz(identity=k,
-                                                               comments="Automatically added by init of auth service")
+                if k == CONFIGURATION_STORE:
+                    self._authz_manager.create_or_merge_user_authz(
+                        identity=k,
+                        protected_rpcs={"set_config", "delete_config", "delete_store", "initialize_configs"},
+                        comments="Automatically added by init of auth service")
+                else:
+                    self._authz_manager.create_or_merge_user_authz(
+                        identity=k, comments="Automatically added by init of auth service")
 
             self._authz_manager.create_or_merge_user_group(name="admin_users",
                                                            identities=set(volttron_services),
@@ -204,18 +210,18 @@ class VolttronAuthService(AuthService, Agent):
         self._authz_manager.remove_user_authorization(identity=identity)
         return True
 
-    # def authenticate(self,
-    #                  *,
-    #                  credentials: Credentials,
-    #                  address: str,
-    #                  domain: Optional[str] = None) -> Optional[Identity]:
-    #     return self._authenticator.authenticate(credentials=credentials, address=address, domain=domain)
-
     def has_credentials_for(self, *, identity: str) -> bool:
         return self.is_credentials(identity=identity)
 
-    def is_authorized(self, *, credentials: Credentials, action: str, resource: str, **kwargs) -> bool:
-        return self._authorizer.is_authorized(credentials, action, resource, **kwargs)
+    def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
+                                method_args: dict, **kwargs) -> bool:
+        return self._authz_manager.check_rpc_authorization(identity=identity, method_name=method_name,
+                                                           method_args=method_args, **kwargs)
+
+    def check_pubsub_authorization(self, *, identity: authz.Identity,
+                                   topic_pattern: str, access: str, **kwargs) -> bool:
+        return self._authz_manager.check_pubsub_authorization(identity=identity, topic_pattern=topic_pattern,
+                                                              access=access, **kwargs)
 
     def add_credentials(self, *, credentials: Credentials):
         self._credentials_store.store_credentials(credentials=credentials)

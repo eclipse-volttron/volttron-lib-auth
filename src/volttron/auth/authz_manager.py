@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os.path
 from pathlib import Path
-from typing import Optional
+from typing import Optional, re
 
 import volttron.types.auth.authz_types as authz
+from volttron.auth.auth_exception import AuthException
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_service import AuthorizationManager, AuthzPersistence
 from volttron.decorators import service
 
+_log = logging.getLogger("auth_service")
+_log.setLevel(logging.DEBUG)
 
 @service
 class FileBasedPersistence(AuthzPersistence):
@@ -88,6 +92,67 @@ class VolttronAuthzManager(AuthorizationManager):
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
+
+    def _isregex(obj):
+        return (obj is not None and isinstance(obj, str) and len(obj) > 1 and obj[0] == obj[-1] == "/")
+
+    def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
+                                method_args: dict, **kwargs) -> bool:
+        user_rpc_caps = self._authz_map.user_capabilities.get(identity, dict()).get(authz.RPC_CAPABILITIES, [])
+        user_rpc_caps_dict = dict()
+        match = False
+        param_error = None
+        for user_rpc_cap in user_rpc_caps:
+            if isinstance(user_rpc_cap, str):
+                if user_rpc_cap == method_name:
+                    # found match nothing more to do return true
+                    match = True
+                elif isinstance(user_rpc_cap, dict):
+                    user_cap_name = list(user_rpc_cap.keys())[0]
+                    user_param_dict = user_rpc_cap[user_cap_name]
+                    if user_cap_name == method_name:
+                        # now validate against param restrictions
+                        _log.debug("called args dict = {}".format(method_args))
+                        _log.debug("cap name= %r parameters allowed=%r", user_cap_name, user_param_dict)
+                        for name, value in user_param_dict.items():
+                            _log.debug("name= {} value={}".format(name, value))
+                            if name not in method_args:
+                                param_error = (f"User {user_cap_name} capability is not defined "
+                                               f"properly. method {method_name} does not have "
+                                               f"a parameter {name}")
+                                break
+                            if self._isregex(value):
+                                regex = re.compile("^" + value[1:-1] + "$")
+                                if not regex.match(method_args[name]):
+                                    param_error = (f"User {identity} can call method {method_name} only "
+                                                   f"with {name} matching pattern {value} but "
+                                                   f"called with {name}={method_args[name]}")
+                                    break
+                            elif method_args[name] != value:
+                                param_error = (f"User {identity} can call method {method_name} only "
+                                               f"with {name}={value} but called with "
+                                               f"{name}={method_args[name]}")
+                                break
+                        else:
+                            # loop went through all args and no error so match is true
+                            match = True
+                else:
+                    AuthException("Invalid user rpc capability. should be string or dict of format "
+                                  "{vip_id.methodname: {parameter1:value restriction, parameter2: value} ")
+                if match:
+                    break
+        else:
+            err = f"user {identity} does not have access to call {method_name} "
+            if param_error:
+                err = err + param_error
+            raise AuthException(err)
+
+        return True
+
+    def check_pubsub_authorization(self, *, identity: authz.Identity, topic_pattern: str,
+                                   access: str, **kwargs) -> bool:
+        #TODO verify. should be simple match
+        return True
 
     def get_user_capabilities(self, *, identity: str) -> dict:
         return self._authz_map.user_capabilities.get(identity)
