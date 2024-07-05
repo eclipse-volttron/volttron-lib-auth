@@ -48,9 +48,10 @@ from gevent.fileobject import FileObject
 from volttron.client.known_identities import CONTROL, VOLTTRON_CENTRAL_PLATFORM
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
 
-#from volttron.platform.agent.known_identities import (CONTROL, VOLTTRON_CENTRAL_PLATFORM)
-#from volttron.utils.platform.agent.utils import (create_file_if_missing, strip_comments)
-#from volttron.utils import get_home, jsonapi
+
+# from volttron.platform.agent.known_identities import (CONTROL, VOLTTRON_CENTRAL_PLATFORM)
+# from volttron.utils.platform.agent.utils import (create_file_if_missing, strip_comments)
+# from volttron.utils import get_home, jsonapi
 
 
 def get_home():
@@ -226,7 +227,7 @@ class AuthFile(object):
             for entry in allow_list:
                 rpc_method_authorizations = entry.get("rpc_method_authorizations")
                 entry["rpc_method_authorizations"] = (
-                    AuthEntry.build_rpc_authorizations_field(rpc_method_authorizations) or {})
+                        AuthEntry.build_rpc_authorizations_field(rpc_method_authorizations) or {})
                 new_allow_list.append(entry)
             return new_allow_list
 

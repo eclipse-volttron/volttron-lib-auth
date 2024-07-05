@@ -6,7 +6,7 @@ import volttron.auth.authz_manager
 # from volttron.auth.base_server import (BaseServerAuthentication,
 #                                        BaseServerAuthorization)
 
-#from volttron.platform.auth.credential_manager import FileBasedCredentialManager
+# from volttron.platform.auth.credential_manager import FileBasedCredentialManager
 
 # __all__: List[str] = [
 #     "BaseClientAuthorization",

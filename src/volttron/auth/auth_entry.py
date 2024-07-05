@@ -107,20 +107,20 @@ class AuthEntry(object):
     """
 
     def __init__(
-        self,
-        domain=None,
-        address=None,
-        mechanism="CURVE",
-        credentials=None,
-        user_id=None,
-        identity=None,
-        groups=None,
-        roles=None,
-        capabilities: Optional[dict] = None,
-        rpc_method_authorizations=None,
-        comments=None,
-        enabled=True,
-        **kwargs,
+            self,
+            domain=None,
+            address=None,
+            mechanism="CURVE",
+            credentials=None,
+            user_id=None,
+            identity=None,
+            groups=None,
+            roles=None,
+            capabilities: Optional[dict] = None,
+            rpc_method_authorizations=None,
+            comments=None,
+            enabled=True,
+            **kwargs,
     ):
         """Initialize AuthEntry."""
         self.domain = AuthEntry._build_field(domain)
@@ -138,7 +138,7 @@ class AuthEntry(object):
         self.identity = identity
         self.enabled = enabled
         if kwargs:
-            _log.debug("auth record has unrecognized keys: %r" % (list(kwargs.keys()), ))
+            _log.debug("auth record has unrecognized keys: %r" % (list(kwargs.keys()),))
         self._check_validity()
 
     def __lt__(self, other):
