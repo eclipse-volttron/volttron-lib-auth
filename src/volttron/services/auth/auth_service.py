@@ -364,15 +364,15 @@ class VolttronAuthService(AuthService, Agent):
             except VIPError as ex:
                 _log.error("Error in sending protected topics update to clear PubSub: " + str(ex))
 
-    @Core.receiver("onstop")
-    def stop_zap(self, sender, **kwargs):
-        if self._zap_greenlet is not None:
-            self._zap_greenlet.kill()
+    # @Core.receiver("onstop")
+    # def stop_zap(self, sender, **kwargs):
+    #     if self._zap_greenlet is not None:
+    #         self._zap_greenlet.kill()
 
-    @Core.receiver("onfinish")
-    def unbind_zap(self, sender, **kwargs):
-        if self.zap_socket is not None:
-            self.zap_socket.unbind("inproc://zeromq.zap.01")
+    # @Core.receiver("onfinish")
+    # def unbind_zap(self, sender, **kwargs):
+    #     if self.zap_socket is not None:
+    #         self.zap_socket.unbind("inproc://zeromq.zap.01")
 
     # @Core.receiver("onstart")
     # def zap_loop(self, sender, **kwargs):
