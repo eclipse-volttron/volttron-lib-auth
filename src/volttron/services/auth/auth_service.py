@@ -143,6 +143,14 @@ class VolttronAuthService(AuthService, Agent):
                     authz.RPCCapability(resource="config.store.delete_config"),
                 ])
             )
+            # TODO - who should have this role, only config_store ? platform? check monolithic code
+            self._authz_manager.create_or_merge_role(
+                name="sync_agent_config",
+                rpc_capabilities=authz.RPCCapabilities([
+                    authz.RPCCapability(resource="config.store.config_update"),
+                    authz.RPCCapability(resource="config.store.initial_update")
+                ])
+            )
             self._authz_manager.create_or_merge_role(
                 name="admin",
                 rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
@@ -153,7 +161,8 @@ class VolttronAuthService(AuthService, Agent):
                 if k == CONFIGURATION_STORE:
                     self._authz_manager.create_or_merge_user_authz(
                         identity=k,
-                        protected_rpcs={"set_config", "delete_config", "delete_store", "initialize_configs"},
+                        protected_rpcs={"set_config", "delete_config", "delete_store", "initialize_configs",
+                                        "config_update", "initial_config"},
                         comments="Automatically added by init of auth service")
                 else:
                     self._authz_manager.create_or_merge_user_authz(
@@ -558,7 +567,7 @@ class VolttronAuthService(AuthService, Agent):
                     return entry.capabilities, entry.groups, entry.roles
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def approve_authorization_failure(self, user_id):
         """RPC method
 
@@ -621,7 +630,7 @@ class VolttronAuthService(AuthService, Agent):
             _log.error(f"{val_err}")
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def deny_authorization_failure(self, user_id):
         """RPC method
 
@@ -680,7 +689,7 @@ class VolttronAuthService(AuthService, Agent):
             _log.error(f"{val_err}")
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def delete_authorization_failure(self, user_id):
         """RPC method
 
@@ -781,7 +790,7 @@ class VolttronAuthService(AuthService, Agent):
         return list(self._auth_denied)
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csrs(self):
         """RPC method
 
@@ -798,7 +807,7 @@ class VolttronAuthService(AuthService, Agent):
             return []
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csr_status(self, common_name):
         """RPC method
 
@@ -817,7 +826,7 @@ class VolttronAuthService(AuthService, Agent):
             return ""
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csr_cert(self, common_name):
         """RPC method
 
@@ -836,7 +845,7 @@ class VolttronAuthService(AuthService, Agent):
             return ""
 
     @RPC.export
-    @RPC.allow(capabilities="allow_auth_modifications")
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_all_pending_csr_subjects(self):
         """RPC method
 
