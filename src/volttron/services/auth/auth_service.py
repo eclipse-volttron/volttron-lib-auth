@@ -53,6 +53,8 @@ from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
 #                                         authorizer, authservice,
 #                                         credentials_creator, credentials_store)
 from volttron.server.server_options import ServerOptions
+
+from volttron.types.auth import AuthException
 from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsCreator,
                                                   CredentialsStore,
@@ -62,6 +64,7 @@ from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types import Service
+from volttron.client.vip.agent import RPC
 # from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
@@ -92,10 +95,7 @@ def load_user(string):
     return _load_re.sub(sub, string).split("\x00")
 
 
-class AuthException(Exception):
-    """General exception for any auth error"""
 
-    pass
 
 
 @service
@@ -222,11 +222,13 @@ class VolttronAuthService(AuthService, Agent):
     def has_credentials_for(self, *, identity: str) -> bool:
         return self.is_credentials(identity=identity)
 
+    @RPC.export
     def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
                                 method_args: dict, **kwargs) -> bool:
         return self._authz_manager.check_rpc_authorization(identity=identity, method_name=method_name,
                                                            method_args=method_args, **kwargs)
 
+    @RPC.export
     def check_pubsub_authorization(self, *, identity: authz.Identity,
                                    topic_pattern: str, access: str, **kwargs) -> bool:
         return self._authz_manager.check_pubsub_authorization(identity=identity, topic_pattern=topic_pattern,
@@ -567,7 +569,6 @@ class VolttronAuthService(AuthService, Agent):
                     return entry.capabilities, entry.groups, entry.roles
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def approve_authorization_failure(self, user_id):
         """RPC method
 
@@ -630,7 +631,6 @@ class VolttronAuthService(AuthService, Agent):
             _log.error(f"{val_err}")
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def deny_authorization_failure(self, user_id):
         """RPC method
 
@@ -689,7 +689,6 @@ class VolttronAuthService(AuthService, Agent):
             _log.error(f"{val_err}")
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def delete_authorization_failure(self, user_id):
         """RPC method
 
@@ -790,7 +789,6 @@ class VolttronAuthService(AuthService, Agent):
         return list(self._auth_denied)
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csrs(self):
         """RPC method
 
@@ -807,7 +805,6 @@ class VolttronAuthService(AuthService, Agent):
             return []
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csr_status(self, common_name):
         """RPC method
 
@@ -826,7 +823,6 @@ class VolttronAuthService(AuthService, Agent):
             return ""
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csr_cert(self, common_name):
         """RPC method
 
@@ -845,7 +841,6 @@ class VolttronAuthService(AuthService, Agent):
             return ""
 
     @RPC.export
-    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_all_pending_csr_subjects(self):
         """RPC method
 
