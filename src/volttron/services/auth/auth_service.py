@@ -159,19 +159,19 @@ class VolttronAuthService(AuthService, Agent):
 
             for k in volttron_services:
                 if k == CONFIGURATION_STORE:
-                    self._authz_manager.create_or_merge_user_authz(
+                    self._authz_manager.create_or_merge_agent_authz(
                         identity=k,
                         protected_rpcs={"set_config", "delete_config", "delete_store", "initialize_configs",
                                         "config_update", "initial_config"},
                         comments="Automatically added by init of auth service")
                 else:
-                    self._authz_manager.create_or_merge_user_authz(
+                    self._authz_manager.create_or_merge_agent_authz(
                         identity=k, comments="Automatically added by init of auth service")
 
-            self._authz_manager.create_or_merge_user_group(name="admin_users",
-                                                           identities=set(volttron_services),
-                                                           roles=authz.UserRoles(
-                                                               [authz.UserRole(role_name="admin")]), )
+            self._authz_manager.create_or_merge_agent_group(name="admin_users",
+                                                            identities=set(volttron_services),
+                                                            agent_roles=authz.AgentRoles(
+                                                                [authz.AgentRole(role_name="admin")]), )
 
         my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
 
@@ -203,10 +203,11 @@ class VolttronAuthService(AuthService, Agent):
 
         if not self._authz_manager.get_user_capabilities(identity=identity):
             # create default only for new users
-            self._authz_manager.create_or_merge_user_authz(identity=identity,
-                                                           roles=authz.UserRoles([
-                                                               authz.UserRole("edit_config_store",
-                                                                              param_restrictions={"identity": identity})
+            self._authz_manager.create_or_merge_agent_authz(identity=identity,
+                                                           agent_roles=authz.AgentRoles([
+                                                               authz.AgentRole(
+                                                                   "edit_config_store",
+                                                                   param_restrictions={"identity": identity})
                                                            ]),
                                                            comments="default authorization for new user")
         return True
@@ -216,7 +217,7 @@ class VolttronAuthService(AuthService, Agent):
 
     def remove_user(self, *, identity: str, **kwargs) -> bool:
         self._credentials_store.remove_credentials(identity=identity)
-        self._authz_manager.remove_user_authorization(identity=identity)
+        self._authz_manager.remove_agent_authorization(identity=identity)
         return True
 
     def has_credentials_for(self, *, identity: str) -> bool:
@@ -917,40 +918,38 @@ class VolttronAuthService(AuthService, Agent):
                                                         pubsub_capabilities=pubsub_capabilities, **kwargs)
 
     @RPC.export
-    def create_or_merge_user_group(self, *, name: str,
-                                   users: set[authz.Identity],
-                                   roles: authz.UserRoles = None,
-                                   rpc_capabilities: authz.RPCCapabilities = None,
-                                   pubsub_capabilities: authz.PubsubCapabilities = None,
-                                   **kwargs) -> bool:
-        return self._authz_manager.create_or_merge_user_group(name=name,
+    def create_or_merge_agent_group(self, *, name: str,
+                                    users: set[authz.Identity],
+                                    roles: authz.AgentRoles = None,
+                                    rpc_capabilities: authz.RPCCapabilities = None,
+                                    pubsub_capabilities: authz.PubsubCapabilities = None,
+                                    **kwargs) -> bool:
+        return self._authz_manager.create_or_merge_agent_group(name=name,
                                                               users=users,
-                                                              roles=roles,
+                                                              agent_roles=roles,
                                                               rpc_capabilities=rpc_capabilities,
                                                               pubsub_capabilities=pubsub_capabilities,
                                                               **kwargs)
 
     @RPC.export
-    def remove_users_from_group(self, name: str, identities: set[authz.Identity]):
-        return self._authz_manager.remove_users_from_group(name, identities)
+    def remove_agents_from_group(self, name: str, identities: set[authz.Identity]):
+        return self._authz_manager.remove_agents_from_group(name, identities)
 
     @RPC.export
-    def add_users_to_group(self, name: str, identities: set[authz.Identity]):
-        return self._authz_manager.add_users_to_group(name, identities)
+    def add_agents_to_group(self, name: str, identities: set[authz.Identity]):
+        return self._authz_manager.add_agents_to_group(name, identities)
 
     @RPC.export
-    def create_or_merge_user_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
-                                   roles: authz.UserRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+    def create_or_merge_agent_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
+                                   roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
                                    pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
                                    **kwargs) -> bool:
-        return self._authz_manager.create_or_merge_user_authz(identity=identity,
+        return self._authz_manager.create_or_merge_agent_authz(identity=identity,
                                                               protected_rpcs=protected_rpcs,
-                                                              roles=roles,
+                                                              agent_roles=roles,
                                                               rpc_capabilities=rpc_capabilities,
                                                               pubsub_capabilities=pubsub_capabilities,
                                                               comments=comments,
-                                                              domain=domain,
-                                                              address=address,
                                                               **kwargs)
 
     @RPC.export
@@ -962,12 +961,12 @@ class VolttronAuthService(AuthService, Agent):
         return self._authz_manager.remove_protected_topic(topic_name_pattern=topic_name_pattern)
 
     @RPC.export
-    def remove_user_authorization(self, identity: authz.Identity):
-        return self._authz_manager.remove_user_authorization(identity=identity)
+    def remove_agent_authorization(self, identity: authz.Identity):
+        return self._authz_manager.remove_agent_authorization(identity=identity)
 
     @RPC.export
-    def remove_user_group(self, name: str):
-        return self._authz_manager.remove_user_group(name=name)
+    def remove_agent_group(self, name: str):
+        return self._authz_manager.remove_agent_group(name=name)
 
     @RPC.export
     def remove_role(self, name: str):

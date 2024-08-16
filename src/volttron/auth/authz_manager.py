@@ -58,35 +58,35 @@ class VolttronAuthzManager(AuthorizationManager):
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def create_or_merge_user_group(self, *, name: str, identities: set[authz.Identity],
-                                   roles: Optional[authz.UserRoles] = None,
-                                   rpc_capabilities: Optional[authz.RPCCapabilities] = None,
-                                   pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
-        result = self._authz_map.create_or_merge_user_group(name=name, identities=identities, roles=roles,
+    def create_or_merge_agent_group(self, *, name: str, identities: [authz.Identity],
+                                    agent_roles: Optional[authz.AgentRoles] = None,
+                                    rpc_capabilities: Optional[authz.RPCCapabilities] = None,
+                                    pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
+        result = self._authz_map.create_or_merge_agent_group(name=name, identities=identities, agent_roles=agent_roles,
                                                             rpc_capabilities=rpc_capabilities,
                                                             pubsub_capabilities=pubsub_capabilities)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def remove_users_from_group(self, name: str, identities: set[authz.Identity]):
-        result = self._authz_map.remove_users_from_group(name, identities)
+    def remove_agents_from_group(self, name: str, identities: set[authz.Identity]):
+        result = self._authz_map.remove_agents_from_group(name, identities)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def add_users_to_group(self, name: str, identities: set[authz.Identity]):
-        result = self._authz_map.add_users_to_group(name, identities)
+    def add_agents_to_group(self, name: str, identities: set[authz.Identity]):
+        result = self._authz_map.add_agents_to_group(name, identities)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def create_or_merge_user_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
-                                   roles: authz.UserRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+    def create_or_merge_agent_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
+                                   agent_roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
                                    pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
                                    **kwargs) -> bool:
-        result = self._authz_map.create_or_merge_user_authz(identity=identity, protected_rpcs=protected_rpcs,
-                                                            roles=roles, rpc_capabilities=rpc_capabilities,
+        result = self._authz_map.create_or_merge_agent_authz(identity=identity, protected_rpcs=protected_rpcs,
+                                                            agent_roles=agent_roles, rpc_capabilities=rpc_capabilities,
                                                             pubsub_capabilities=pubsub_capabilities,
                                                             comments=comments)
         if result:
@@ -98,7 +98,7 @@ class VolttronAuthzManager(AuthorizationManager):
 
     def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
                                 method_args: dict, **kwargs) -> bool:
-        user_rpc_caps = self._authz_map.user_capabilities.get(identity, dict()).get(authz.RPC_CAPABILITIES, [])
+        user_rpc_caps = self._authz_map.agent_capabilities.get(identity, dict()).get(authz.RPC_CAPABILITIES, [])
         user_rpc_caps_dict = dict()
         match = False
         param_error = None
@@ -155,7 +155,7 @@ class VolttronAuthzManager(AuthorizationManager):
         return True
 
     def get_user_capabilities(self, *, identity: str) -> dict:
-        return self._authz_map.user_capabilities.get(identity)
+        return self._authz_map.agent_capabilities.get(identity)
 
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
         result = self._authz_map.create_protected_topic(topic_name_pattern=topic_name_pattern)
@@ -169,14 +169,14 @@ class VolttronAuthzManager(AuthorizationManager):
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def remove_user_authorization(self, identity: authz.Identity):
-        result = self._authz_map.remove_user_authorization(identity=identity)
+    def remove_agent_authorization(self, identity: authz.Identity):
+        result = self._authz_map.remove_agent_authorization(identity=identity)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def remove_user_group(self, name: str):
-        result = self._authz_map.remove_user_group(name=name)
+    def remove_agent_group(self, name: str):
+        result = self._authz_map.remove_agent_group(name=name)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
@@ -210,24 +210,24 @@ if __name__ == '__main__':
                                  )
     print(manager._authz_map.compact_dict)
 
-    manager.create_or_merge_user_group(name="group1",
+    manager.create_or_merge_agent_group(name="group1",
                                        identities=("test1", "test2"),
                                        pubsub_capabilities=authz.PubsubCapabilities([
                                            authz.PubsubCapability(topic_access="publish", topic_pattern="/devices/*")
                                        ]))
-    manager.create_or_merge_user_group(name="group1",
+    manager.create_or_merge_agent_group(name="group1",
                                        identities={"test1", "test2"},
                                        pubsub_capabilities=authz.PubsubCapabilities([
                                            authz.PubsubCapability(topic_access="publish", topic_pattern="/devices/*")
                                        ]))
     print(manager._authz_map.compact_dict)
-    manager.create_or_merge_user_group(name="group1",
+    manager.create_or_merge_agent_group(name="group1",
                                        identities={"test1", "test2"},
                                        pubsub_capabilities=authz.PubsubCapabilities([
                                            authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
                                        ]))
     print(manager._authz_map.compact_dict)
-    manager.create_or_merge_user_group(name="group1",
+    manager.create_or_merge_agent_group(name="group1",
                                        identities={"test1", "test2"},
                                        rpc_capabilities=authz.RPCCapabilities([
                                            authz.RPCCapability(resource="vip1.rpc2")
@@ -235,21 +235,21 @@ if __name__ == '__main__':
 
     print(manager._authz_map.compact_dict)
 
-    manager.create_or_merge_user_authz(identity="platform.historian")
+    manager.create_or_merge_agent_authz(identity="platform.historian")
     print(manager._authz_map.compact_dict)
-    manager.create_or_merge_user_authz(identity="platform.historian",
+    manager.create_or_merge_agent_authz(identity="platform.historian",
                                        rpc_capabilities=authz.RPCCapabilities([
                                            authz.RPCCapability(resource="vip1.rpc2")
                                        ])
                                        )
     print(manager._authz_map.compact_dict)
-    manager.create_or_merge_user_authz(identity="platform.historian",
+    manager.create_or_merge_agent_authz(identity="platform.historian",
                                        rpc_capabilities=authz.RPCCapabilities([
                                            authz.RPCCapability(resource="vip1.rpc2")
                                        ]),
                                        protected_rpcs={"query"}
                                        )
-    manager.create_or_merge_user_authz(identity="platform.driver",
+    manager.create_or_merge_agent_authz(identity="platform.driver",
                                        pubsub_capabilities=authz.PubsubCapabilities([
                                            authz.PubsubCapability(topic_access="pubsub", topic_pattern="/devices/*")
                                        ])
