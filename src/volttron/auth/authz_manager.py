@@ -58,11 +58,11 @@ class VolttronAuthzManager(AuthorizationManager):
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def create_or_merge_agent_group(self, *, name: str, identities: set[authz.Identity],
-                                    roles: Optional[authz.AgentRoles] = None,
+    def create_or_merge_agent_group(self, *, name: str, identities: [authz.Identity],
+                                    agent_roles: Optional[authz.AgentRoles] = None,
                                     rpc_capabilities: Optional[authz.RPCCapabilities] = None,
                                     pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
-        result = self._authz_map.create_or_merge_agent_group(name=name, identities=identities, roles=roles,
+        result = self._authz_map.create_or_merge_agent_group(name=name, identities=identities, agent_roles=agent_roles,
                                                             rpc_capabilities=rpc_capabilities,
                                                             pubsub_capabilities=pubsub_capabilities)
         if result:
@@ -82,11 +82,11 @@ class VolttronAuthzManager(AuthorizationManager):
         return result
 
     def create_or_merge_agent_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
-                                   roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+                                   agent_roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
                                    pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
                                    **kwargs) -> bool:
         result = self._authz_map.create_or_merge_agent_authz(identity=identity, protected_rpcs=protected_rpcs,
-                                                            roles=roles, rpc_capabilities=rpc_capabilities,
+                                                            agent_roles=agent_roles, rpc_capabilities=rpc_capabilities,
                                                             pubsub_capabilities=pubsub_capabilities,
                                                             comments=comments)
         if result:

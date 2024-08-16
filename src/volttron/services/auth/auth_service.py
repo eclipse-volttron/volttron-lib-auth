@@ -170,8 +170,8 @@ class VolttronAuthService(AuthService, Agent):
 
             self._authz_manager.create_or_merge_agent_group(name="admin_users",
                                                             identities=set(volttron_services),
-                                                            roles=authz.AgentRoles(
-                                                               [authz.AgentRole(role_name="admin")]), )
+                                                            agent_roles=authz.AgentRoles(
+                                                                [authz.AgentRole(role_name="admin")]), )
 
         my_creds = self._credentials_store.retrieve_credentials(identity=AUTH)
 
@@ -204,9 +204,10 @@ class VolttronAuthService(AuthService, Agent):
         if not self._authz_manager.get_user_capabilities(identity=identity):
             # create default only for new users
             self._authz_manager.create_or_merge_agent_authz(identity=identity,
-                                                           roles=authz.AgentRoles([
-                                                               authz.AgentRole("edit_config_store",
-                                                                                       param_restrictions={"identity": identity})
+                                                           agent_roles=authz.AgentRoles([
+                                                               authz.AgentRole(
+                                                                   "edit_config_store",
+                                                                   param_restrictions={"identity": identity})
                                                            ]),
                                                            comments="default authorization for new user")
         return True
@@ -930,7 +931,7 @@ class VolttronAuthService(AuthService, Agent):
                                     **kwargs) -> bool:
         return self._authz_manager.create_or_merge_agent_group(name=name,
                                                               users=users,
-                                                              roles=roles,
+                                                              agent_roles=roles,
                                                               rpc_capabilities=rpc_capabilities,
                                                               pubsub_capabilities=pubsub_capabilities,
                                                               **kwargs)
@@ -950,12 +951,10 @@ class VolttronAuthService(AuthService, Agent):
                                    **kwargs) -> bool:
         return self._authz_manager.create_or_merge_agent_authz(identity=identity,
                                                               protected_rpcs=protected_rpcs,
-                                                              roles=roles,
+                                                              agent_roles=roles,
                                                               rpc_capabilities=rpc_capabilities,
                                                               pubsub_capabilities=pubsub_capabilities,
                                                               comments=comments,
-                                                              domain=domain,
-                                                              address=address,
                                                               **kwargs)
 
     @RPC.export
