@@ -135,12 +135,12 @@ class VolttronAuthService(AuthService, Agent):
         if self._authz_manager is not None:
 
             self._authz_manager.create_or_merge_role(
-                name="edit_config_store",
+                name="default_rpc_capabilities",
                 rpc_capabilities=authz.RPCCapabilities([
-                    authz.RPCCapability(resource="config.store.initialize_configs"),
-                    authz.RPCCapability(resource="config.store.set_config"),
-                    authz.RPCCapability(resource="config.store.delete_store"),
-                    authz.RPCCapability(resource="config.store.delete_config"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.initialize_configs"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.set_config"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.delete_store"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.delete_config"),
                 ])
             )
             # TODO - who should have this role, only config_store ? platform? check monolithic code
@@ -206,7 +206,7 @@ class VolttronAuthService(AuthService, Agent):
             self._authz_manager.create_or_merge_agent_authz(identity=identity,
                                                            agent_roles=authz.AgentRoles([
                                                                authz.AgentRole(
-                                                                   "edit_config_store",
+                                                                   "default_rpc_capabilities",
                                                                    param_restrictions={"identity": identity})
                                                            ]),
                                                            comments="default authorization for new user")
@@ -223,11 +223,16 @@ class VolttronAuthService(AuthService, Agent):
     def has_credentials_for(self, *, identity: str) -> bool:
         return self.is_credentials(identity=identity)
 
+    @RPC.export
+    def get_protected_rpcs(self, identity:authz.Identity) -> list[str]:
+        return self._authz_manager.get_protected_rpcs(identity)
+
+    @RPC.export
     def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
                                 method_args: dict, **kwargs) -> bool:
         return self._authz_manager.check_rpc_authorization(identity=identity, method_name=method_name,
                                                            method_args=method_args, **kwargs)
-
+    @RPC.export
     def check_pubsub_authorization(self, *, identity: authz.Identity,
                                    topic_pattern: str, access: str, **kwargs) -> bool:
         return self._authz_manager.check_pubsub_authorization(identity=identity, topic_pattern=topic_pattern,
