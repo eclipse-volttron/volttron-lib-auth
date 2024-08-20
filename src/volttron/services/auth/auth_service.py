@@ -94,10 +94,7 @@ def load_user(string):
     return _load_re.sub(sub, string).split("\x00")
 
 
-class AuthException(Exception):
-    """General exception for any auth error"""
 
-    pass
 
 
 @service
