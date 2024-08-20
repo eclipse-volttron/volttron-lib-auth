@@ -45,7 +45,7 @@ from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               VOLTTRON_CENTRAL_PLATFORM,
                                               PLATFORM,
                                               PLATFORM_HEALTH)
-from volttron.client.vip.agent import RPC, Agent, Core, VIPError
+from volttron.client.vip.agent import RPC, Agent, Core, VIPError, Unreachable
 # TODO: it seems this should not be so nested of a import path.
 from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
 # from volttron.server.containers import service_repo
@@ -53,8 +53,6 @@ from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
 #                                         authorizer, authservice,
 #                                         credentials_creator, credentials_store)
 from volttron.server.server_options import ServerOptions
-
-from volttron.types.auth import AuthException
 from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsCreator,
                                                   CredentialsStore,
@@ -64,7 +62,6 @@ from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types import Service
-from volttron.client.vip.agent import RPC
 # from volttron.types.service_interface import ServiceInterface
 from volttron.utils import ClientContext as cc
 from volttron.utils import create_file_if_missing, jsonapi, strip_comments
@@ -72,6 +69,8 @@ from volttron.utils.certs import Certs
 from volttron.utils.filewatch import watch_file
 from volttron.decorators import service
 import volttron.types.auth.authz_types as authz
+from volttron.utils.jsonrpc import MethodNotFound, RemoteError
+
 
 _log = logging.getLogger("auth_service")
 _log.setLevel(logging.DEBUG)
@@ -135,12 +134,12 @@ class VolttronAuthService(AuthService, Agent):
         if self._authz_manager is not None:
 
             self._authz_manager.create_or_merge_role(
-                name="edit_config_store",
+                name="default_rpc_capabilities",
                 rpc_capabilities=authz.RPCCapabilities([
-                    authz.RPCCapability(resource="config.store.initialize_configs"),
-                    authz.RPCCapability(resource="config.store.set_config"),
-                    authz.RPCCapability(resource="config.store.delete_store"),
-                    authz.RPCCapability(resource="config.store.delete_config"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.initialize_configs"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.set_config"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.delete_store"),
+                    authz.RPCCapability(resource=f"{CONFIGURATION_STORE}.delete_config"),
                 ])
             )
             # TODO - who should have this role, only config_store ? platform? check monolithic code
@@ -192,7 +191,9 @@ class VolttronAuthService(AuthService, Agent):
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
 
-    def create_user(self, *, identity: str, **kwargs) -> bool:
+    # TODO: protect these methods
+    @RPC.export
+    def create_agent(self, *, identity: str, **kwargs) -> bool:
 
         try:
             creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
@@ -201,21 +202,23 @@ class VolttronAuthService(AuthService, Agent):
             creds = self._credentials_creator.create(identity, **kwargs)
             self._credentials_store.store_credentials(credentials=creds)
 
-        if not self._authz_manager.get_user_capabilities(identity=identity):
+        if not self._authz_manager.get_agent_capabilities(identity=identity):
             # create default only for new users
             self._authz_manager.create_or_merge_agent_authz(identity=identity,
                                                            agent_roles=authz.AgentRoles([
                                                                authz.AgentRole(
-                                                                   "edit_config_store",
+                                                                   "default_rpc_capabilities",
                                                                    param_restrictions={"identity": identity})
                                                            ]),
                                                            comments="default authorization for new user")
         return True
 
-    def get_user_capabilities(self, identity: str):
-        return self._authz_manager.get_user_capabilities(identity=identity)
+    @RPC.export
+    def get_agent_capabilities(self, identity: str):
+        return self._authz_manager.get_agent_capabilities(identity=identity)
 
-    def remove_user(self, *, identity: str, **kwargs) -> bool:
+    @RPC.export
+    def remove_agent(self, *, identity: str, **kwargs) -> bool:
         self._credentials_store.remove_credentials(identity=identity)
         self._authz_manager.remove_agent_authorization(identity=identity)
         return True
@@ -224,11 +227,14 @@ class VolttronAuthService(AuthService, Agent):
         return self.is_credentials(identity=identity)
 
     @RPC.export
+    def get_protected_rpcs(self, identity:authz.Identity) -> list[str]:
+        return self._authz_manager.get_protected_rpcs(identity)
+
+    @RPC.export
     def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
                                 method_args: dict, **kwargs) -> bool:
         return self._authz_manager.check_rpc_authorization(identity=identity, method_name=method_name,
                                                            method_args=method_args, **kwargs)
-
     @RPC.export
     def check_pubsub_authorization(self, *, identity: authz.Identity,
                                    topic_pattern: str, access: str, **kwargs) -> bool:
@@ -570,6 +576,7 @@ class VolttronAuthService(AuthService, Agent):
                     return entry.capabilities, entry.groups, entry.roles
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def approve_authorization_failure(self, user_id):
         """RPC method
 
@@ -632,6 +639,7 @@ class VolttronAuthService(AuthService, Agent):
             _log.error(f"{val_err}")
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def deny_authorization_failure(self, user_id):
         """RPC method
 
@@ -690,6 +698,7 @@ class VolttronAuthService(AuthService, Agent):
             _log.error(f"{val_err}")
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def delete_authorization_failure(self, user_id):
         """RPC method
 
@@ -790,6 +799,7 @@ class VolttronAuthService(AuthService, Agent):
         return list(self._auth_denied)
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csrs(self):
         """RPC method
 
@@ -806,6 +816,7 @@ class VolttronAuthService(AuthService, Agent):
             return []
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csr_status(self, common_name):
         """RPC method
 
@@ -824,6 +835,7 @@ class VolttronAuthService(AuthService, Agent):
             return ""
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_pending_csr_cert(self, common_name):
         """RPC method
 
@@ -842,6 +854,7 @@ class VolttronAuthService(AuthService, Agent):
             return ""
 
     @RPC.export
+    #@RPC.allow(capabilities="allow_auth_modifications")
     def get_all_pending_csr_subjects(self):
         """RPC method
 
@@ -919,17 +932,17 @@ class VolttronAuthService(AuthService, Agent):
 
     @RPC.export
     def create_or_merge_agent_group(self, *, name: str,
-                                    users: set[authz.Identity],
+                                    identities: set[authz.Identity],
                                     roles: authz.AgentRoles = None,
                                     rpc_capabilities: authz.RPCCapabilities = None,
                                     pubsub_capabilities: authz.PubsubCapabilities = None,
                                     **kwargs) -> bool:
         return self._authz_manager.create_or_merge_agent_group(name=name,
-                                                              users=users,
-                                                              agent_roles=roles,
-                                                              rpc_capabilities=rpc_capabilities,
-                                                              pubsub_capabilities=pubsub_capabilities,
-                                                              **kwargs)
+                                                               identities=identities,
+                                                               agent_roles=roles,
+                                                               rpc_capabilities=rpc_capabilities,
+                                                               pubsub_capabilities=pubsub_capabilities,
+                                                               **kwargs)
 
     @RPC.export
     def remove_agents_from_group(self, name: str, identities: set[authz.Identity]):
@@ -941,16 +954,30 @@ class VolttronAuthService(AuthService, Agent):
 
     @RPC.export
     def create_or_merge_agent_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
-                                   roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
-                                   pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
-                                   **kwargs) -> bool:
-        return self._authz_manager.create_or_merge_agent_authz(identity=identity,
-                                                              protected_rpcs=protected_rpcs,
-                                                              agent_roles=roles,
-                                                              rpc_capabilities=rpc_capabilities,
-                                                              pubsub_capabilities=pubsub_capabilities,
-                                                              comments=comments,
-                                                              **kwargs)
+                                    roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
+                                    pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
+                                    **kwargs) -> bool:
+        result = self._authz_manager.create_or_merge_agent_authz(identity=identity,
+                                                                 protected_rpcs=protected_rpcs,
+                                                                 agent_roles=roles,
+                                                                 rpc_capabilities=rpc_capabilities,
+                                                                 pubsub_capabilities=pubsub_capabilities,
+                                                                 comments=comments,
+                                                                 **kwargs)
+        if result and protected_rpcs:
+            if identity in self.vip.peerlist.peers_list:
+                try:
+                    self.vip.rpc.call(identity,
+                                      "rpc.add_protected_rpcs",
+                                      protected_rpcs).get(timeout=5)
+                except Unreachable:
+                    _log.debug(f"Agent {identity} is not running. "
+                               f"Authorization changes will get applied on agent start")
+                except RemoteError as e:
+                    raise (f"Error trying to propagate new protected rpcs {protected_rpcs} to "
+                           f"agent {identity}. Agent need to be restarted to apply the new authorization rules.", e)
+        return result
+
 
     @RPC.export
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
