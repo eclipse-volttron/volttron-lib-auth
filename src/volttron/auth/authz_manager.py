@@ -159,7 +159,7 @@ class VolttronAuthzManager(AuthorizationManager):
         #TODO verify. should be simple match
         return True
 
-    def get_user_capabilities(self, *, identity: str) -> dict:
+    def get_agent_capabilities(self, *, identity: str) -> dict:
         return self._authz_map.agent_capabilities.get(identity)
 
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
