@@ -113,7 +113,7 @@ class VolttronAuthzManager(AuthorizationManager):
                     regex = re.compile("^" + user_rpc_cap[1:-1] + "$")
                     if regex.match(method_name):
                         match = True
-                if user_rpc_cap == method_name:
+                elif user_rpc_cap == method_name:
                     # found match nothing more to do return true
                     match = True
             elif isinstance(user_rpc_cap, dict):
