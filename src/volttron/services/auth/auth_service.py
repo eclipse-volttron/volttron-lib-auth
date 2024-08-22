@@ -152,9 +152,9 @@ class VolttronAuthService(AuthService, Agent):
             )
             self._authz_manager.create_or_merge_role(
                 name="admin",
-                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="*.*")]),
+                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="/.*/")]),
                 pubsub_capabilities=authz.PubsubCapabilities(
-                    [authz.PubsubCapability(topic_pattern="*", topic_access="pubsub")]))
+                    [authz.PubsubCapability(topic_pattern="/.*/", topic_access="pubsub")]))
 
             for k in volttron_services:
                 if k == CONFIGURATION_STORE:
@@ -205,12 +205,15 @@ class VolttronAuthService(AuthService, Agent):
         if not self._authz_manager.get_agent_capabilities(identity=identity):
             # create default only for new users
             self._authz_manager.create_or_merge_agent_authz(identity=identity,
-                                                           agent_roles=authz.AgentRoles([
-                                                               authz.AgentRole(
-                                                                   "default_rpc_capabilities",
-                                                                   param_restrictions={"identity": identity})
-                                                           ]),
-                                                           comments="default authorization for new user")
+                                                            agent_roles=authz.AgentRoles([authz.AgentRole(
+                                                                "default_rpc_capabilities",
+                                                                param_restrictions={"identity": identity})]),
+                                                            protected_rpcs={
+                                                                "config.update",
+                                                                "config.initial_update",
+                                                                "rpc.add_protected_rpcs",
+                                                                "rpc.remove_protected_rpcs"},
+                                                            comments="default authorization for new user")
         return True
 
     @RPC.export

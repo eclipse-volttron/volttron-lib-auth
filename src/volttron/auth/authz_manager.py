@@ -4,7 +4,8 @@ import json
 import logging
 import os.path
 from pathlib import Path
-from typing import Optional, re
+from typing import Optional
+import re
 
 import volttron.types.auth.authz_types as authz
 from volttron.auth.auth_exception import AuthException
@@ -108,7 +109,11 @@ class VolttronAuthzManager(AuthorizationManager):
         param_error = None
         for user_rpc_cap in user_rpc_caps:
             if isinstance(user_rpc_cap, str):
-                if user_rpc_cap == method_name:
+                if VolttronAuthzManager._isregex(user_rpc_cap):
+                    regex = re.compile("^" + user_rpc_cap[1:-1] + "$")
+                    if regex.match(method_name):
+                        match = True
+                elif user_rpc_cap == method_name:
                     # found match nothing more to do return true
                     match = True
             elif isinstance(user_rpc_cap, dict):
@@ -141,8 +146,8 @@ class VolttronAuthzManager(AuthorizationManager):
                         # loop went through all args and no error(hence didn't break from loop) so match is true
                         match = True
             else:
-                raise AuthException("Invalid user rpc capability. should be string or dict of format "
-                              "{vip_id.methodname: {parameter1:value restriction, parameter2: value} ")
+                param_error = ("Invalid user rpc capability. should be string or dict of format "
+                               "{vip_id.methodname: {parameter1:value restriction, parameter2: value} ")
             if match:
                 break
         else:
