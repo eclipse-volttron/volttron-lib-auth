@@ -167,14 +167,14 @@ class VolttronAuthzManager(AuthorizationManager):
     def get_agent_capabilities(self, *, identity: str) -> dict:
         return self._authz_map.agent_capabilities.get(identity)
 
-    def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        result = self._authz_map.create_protected_topic(topic_name_pattern=topic_name_pattern)
+    def create_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        result = self._authz_map.create_protected_topics(topic_name_patterns=topic_name_patterns)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        result = self._authz_map.remove_protected_topic(topic_name_pattern=topic_name_pattern)
+    def remove_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        result = self._authz_map.remove_protected_topics(topic_name_patterns=topic_name_patterns)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
@@ -202,7 +202,7 @@ if __name__ == '__main__':
     options = ServerOptions()
     manager = VolttronAuthzManager(options=options)
 
-    manager.create_protected_topic(topic_name_pattern="devices/*")
+    manager.create_protected_topics(topic_name_patterns=["devices/*"])
     print(manager._authz_map.compact_dict)
     manager.create_or_merge_role(name="test_role",
                                  rpc_capabilities=authz.RPCCapabilities(

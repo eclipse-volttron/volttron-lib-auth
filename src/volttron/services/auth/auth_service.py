@@ -983,12 +983,12 @@ class VolttronAuthService(AuthService, Agent):
 
 
     @RPC.export
-    def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        return self._authz_manager.create_protected_topic(topic_name_pattern=topic_name_pattern)
+    def create_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        return self._authz_manager.create_protected_topics(topic_name_patterns=topic_name_patterns)
 
     @RPC.export
-    def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        return self._authz_manager.remove_protected_topic(topic_name_pattern=topic_name_pattern)
+    def remove_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        return self._authz_manager.remove_protected_topics(topic_name_patterns=topic_name_patterns)
 
     @RPC.export
     def remove_agent_authorization(self, identity: authz.Identity):
