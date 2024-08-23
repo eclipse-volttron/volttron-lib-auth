@@ -163,6 +163,15 @@ class VolttronAuthService(AuthService, Agent):
                         protected_rpcs={"set_config", "delete_config", "delete_store", "initialize_configs",
                                         "config_update", "initial_config"},
                         comments="Automatically added by init of auth service")
+                if k == AUTH:
+                    self._authz_manager.create_or_merge_agent_authz(
+                        identity=k,
+                        protected_rpcs={"create_agent", "remove_agent", "create_or_merge_role",
+                                        "create_or_merge_agent_group", "create_or_merge_agent_authz",
+                                        "create_protected_topics", "remove_agents_from_group", "add_agents_to_group",
+                                        "remove_protected_topics", "remove_agent_authorization",
+                                        "remove_agent_group", "remove_role"},
+                        comments="Automatically added by init of auth service")
                 else:
                     self._authz_manager.create_or_merge_agent_authz(
                         identity=k, comments="Automatically added by init of auth service")
