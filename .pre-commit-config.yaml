@@ -16,13 +16,6 @@ repos:
   - id: no-commit-to-branch  # blocks main commits.  To bypass do git commit --allow-empty
   - id: pretty-format-json
 
-# For more information about isort, see https://pycqa.github.io/isort/docs/configuration/pre-commit.html
-- repo: https://github.com/pycqa/isort
-  rev: 5.10.1
-  hooks:
-    - id: isort
-      name: isort (python)
-
 # For more information about mypy, see https://github.com/pre-commit/mirrors-mypy
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: v0.910-1
@@ -44,9 +37,6 @@ repos:
   hooks:
   - id: pretty-format-toml
     args: [--autofix]
-  - id: pretty-format-yaml
-    args: [--autofix]
-    exclude: .copier-answer.yml
 
 # For more information about check-poetry, https://gitlab.com/smop/pre-commit-hooks/-/blob/master/.pre-commit-hooks.yaml
 - repo: local

@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import os.path
+from abc import ABC
 from pathlib import Path
 from typing import Optional
 import re
 
 import volttron.types.auth.authz_types as authz
-from volttron.auth.auth_exception import AuthException
+from volttron.utils import is_regex
+from volttron.types.auth import AuthException
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_service import AuthorizationManager, AuthzPersistence
 from volttron.decorators import service
@@ -37,7 +39,7 @@ class FileBasedPersistence(AuthzPersistence):
 
 
 @service
-class VolttronAuthzManager(AuthorizationManager):
+class VolttronAuthzManager(AuthorizationManager, ABC):
 
     def __init__(self,
                  *,
@@ -48,7 +50,7 @@ class VolttronAuthzManager(AuthorizationManager):
             persistence = FileBasedPersistence
         self.persistence = persistence
         self.authz_path = (options.volttron_home / "authz.json").as_posix()
-        self._authz_map = persistence.load(self.authz_path)
+        self._authz_map: authz.VolttronAuthzMap = persistence.load(self.authz_path)
 
     def create_or_merge_role(self, *, name: str, rpc_capabilities: Optional[authz.RPCCapabilities] = None,
                              pubsub_capabilities: Optional[authz.PubsubCapabilities] = None, **kwargs) -> bool:
@@ -97,10 +99,6 @@ class VolttronAuthzManager(AuthorizationManager):
     def get_protected_rpcs(self, identity) -> list[str]:
         return self._authz_map.get_protected_rpcs(identity)
 
-    @classmethod
-    def _isregex(cls, value):
-        return value is not None and isinstance(value, str) and len(value) > 1 and value[0] == value[-1] == "/"
-
     def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
                                 method_args: dict, **kwargs) -> bool:
         user_rpc_caps = self._authz_map.agent_capabilities.get(identity, dict()).get(authz.RPC_CAPABILITIES, [])
@@ -109,7 +107,7 @@ class VolttronAuthzManager(AuthorizationManager):
         param_error = None
         for user_rpc_cap in user_rpc_caps:
             if isinstance(user_rpc_cap, str):
-                if VolttronAuthzManager._isregex(user_rpc_cap):
+                if is_regex(user_rpc_cap):
                     regex = re.compile("^" + user_rpc_cap[1:-1] + "$")
                     if regex.match(method_name):
                         match = True
@@ -130,7 +128,7 @@ class VolttronAuthzManager(AuthorizationManager):
                                            f"properly. method {method_name} does not have "
                                            f"a parameter {name}")
                             break  # from inner param dict loop
-                        if VolttronAuthzManager._isregex(value):
+                        if is_regex(value):
                             regex = re.compile("^" + value[1:-1] + "$")
                             if not regex.match(method_args[name]):
                                 param_error = (f"User {identity} can call method {method_name} only "
@@ -161,23 +159,58 @@ class VolttronAuthzManager(AuthorizationManager):
 
     def check_pubsub_authorization(self, *, identity: authz.Identity, topic_pattern: str,
                                    access: str, **kwargs) -> bool:
-        #TODO verify. should be simple match
-        return True
+
+        if not self.is_protected_topic(topic_name_pattern=topic_pattern):
+            return False
+
+        capabilities = self._authz_map.agent_capabilities.get(identity).get("pubsub_capabilities")
+
+        if not capabilities:
+            return False
+
+        for reg, cap_access in capabilities.items():
+            if is_regex(reg):
+                compiled = re.compile(reg[1:-1])
+            else:
+                compiled = re.compile(reg + ".*")
+
+            if compiled.match(topic_pattern):
+                if cap_access == "pubsub":
+                    return True
+
+                return access == cap_access
+
+        return False
 
     def get_agent_capabilities(self, *, identity: str) -> dict:
         return self._authz_map.agent_capabilities.get(identity)
 
     def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        result = self._authz_map.create_protected_topic(topic_name_pattern=topic_name_pattern)
+        result = self._authz_map.create_protected_topics(topic_name_patterns=[topic_name_pattern])
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
     def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        result = self._authz_map.remove_protected_topic(topic_name_pattern=topic_name_pattern)
+        result = self._authz_map.remove_protected_topics(topic_name_patterns=[topic_name_pattern])
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
+
+    def is_protected_topic(self, *, topic_name_pattern: str) -> bool:
+        """Return True if the topic is protected, False otherwise.
+
+        The topic_expression can be a str or regex pattern.  If the string or
+        expression matches a protected topic then True is returned.  If not,
+        False is returned.
+
+        :param topic_name_pattern: The topic to check if it is protected.
+        :type topic_name_pattern: str
+        :return: True if the topic is protected, False otherwise.
+        :rtype: bool
+        """
+        #self._authz_map.protected_topics
+        return self._authz_map.is_protected_topic(topic_name_pattern=topic_name_pattern)
 
     def remove_agent_authorization(self, identity: authz.Identity):
         result = self._authz_map.remove_agent_authorization(identity=identity)
