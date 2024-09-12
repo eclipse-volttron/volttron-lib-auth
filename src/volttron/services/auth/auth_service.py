@@ -258,8 +258,8 @@ class VolttronAuthService(AuthService, Agent):
     def create_or_merge_role(self,
                              *,
                              name: str,
-                             rpc_capabilities: Optional[authz.RPCCapabilities | dict] = None,
-                             pubsub_capabilities: Optional[authz.PubsubCapabilities| dict] = None,
+                             rpc_capabilities: authz.RPCCapabilities | dict = None,
+                             pubsub_capabilities: authz.PubsubCapabilities| dict = None,
                              **kwargs) -> bool:
         if rpc_capabilities and isinstance(rpc_capabilities, dict):
             rpc_capabilities = cattrs.structure(rpc_capabilities, authz.RPCCapabilities)
@@ -273,9 +273,9 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def create_or_merge_agent_group(self, *, name: str,
                                     identities: list[authz.Identity],
-                                    roles: Optional[authz.AgentRoles|dict] = None,
-                                    rpc_capabilities: Optional[authz.RPCCapabilities| dict] = None,
-                                    pubsub_capabilities: Optional[authz.PubsubCapabilities| dict] = None,
+                                    roles: authz.AgentRoles | dict = None,
+                                    rpc_capabilities: authz.RPCCapabilities | dict = None,
+                                    pubsub_capabilities: authz.PubsubCapabilities | dict = None,
                                     **kwargs) -> bool:
 
         if roles and isinstance(roles, dict):
@@ -293,20 +293,20 @@ class VolttronAuthService(AuthService, Agent):
                                                                **kwargs)
 
     @RPC.export
-    def remove_agents_from_group(self, name: str, identities: [authz.Identity]):
+    def remove_agents_from_group(self, name: str, identities: list[authz.Identity]):
         return self._authz_manager.remove_agents_from_group(name, identities)
 
     @RPC.export
-    def add_agents_to_group(self, name: str, identities: [authz.Identity]):
+    def add_agents_to_group(self, name: str, identities: list[authz.Identity]):
         return self._authz_manager.add_agents_to_group(name, identities)
 
     @RPC.export
     def create_or_merge_agent_authz(self, *,
                                     identity: str,
-                                    protected_rpcs: [authz.vipid_dot_rpc_method] = None,
-                                    roles: Optional[authz.AgentRoles | dict] = None,
-                                    rpc_capabilities: Optional[authz.RPCCapabilities | dict] = None,
-                                    pubsub_capabilities: Optional[authz.PubsubCapabilities | dict] = None,
+                                    protected_rpcs: list[authz.vipid_dot_rpc_method] = None,
+                                    roles: authz.AgentRoles | dict = None,
+                                    rpc_capabilities: authz.RPCCapabilities | dict = None,
+                                    pubsub_capabilities: authz.PubsubCapabilities | dict = None,
                                     comments: str = None,
                                     **kwargs) -> bool:
 
@@ -340,12 +340,12 @@ class VolttronAuthService(AuthService, Agent):
 
 
     @RPC.export
-    def create_protected_topics(self, *, topic_name_pattern: [str]) -> bool:
-        return self._authz_manager.create_protected_topics(topic_name_patterns=[topic_name_pattern])
+    def create_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        return self._authz_manager.create_protected_topics(topic_name_patterns=topic_name_patterns)
 
     @RPC.export
-    def remove_protected_topics(self, *, topic_name_pattern: [str]) -> bool:
-        return self._authz_manager.remove_protected_topics(topic_name_patterns=[topic_name_pattern])
+    def remove_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        return self._authz_manager.remove_protected_topics(topic_name_patterns=topic_name_patterns)
 
     @RPC.export
     def remove_agent_authorization(self, identity: authz.Identity):

@@ -167,14 +167,14 @@ class VolttronAuthzManager(AuthorizationManager):
     def get_agent_capabilities(self, *, identity: str) -> dict:
         return self._authz_map.agent_capabilities.get(identity)
 
-    def create_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        result = self._authz_map.create_protected_topics(topic_name_patterns=[topic_name_pattern])
+    def create_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        result = self._authz_map.create_protected_topics(topic_name_patterns=topic_name_patterns)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def remove_protected_topic(self, *, topic_name_pattern: str) -> bool:
-        result = self._authz_map.remove_protected_topics(topic_name_patterns=[topic_name_pattern])
+    def remove_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+        result = self._authz_map.remove_protected_topics(topic_name_patterns=topic_name_patterns)
         if result:
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
