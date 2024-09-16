@@ -5,7 +5,7 @@ import logging
 import os.path
 from abc import ABC
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 import re
 
 import volttron.types.auth.authz_types as authz
@@ -129,7 +129,7 @@ class VolttronAuthzManager(AuthorizationManager, ABC):
                                            f"a parameter {name}")
                             break  # from inner param dict loop
                         if is_regex(value):
-                            regex = re.compile("^" + value[1:-1] + "$")
+                            regex = re.compile(value[1:-1])
                             if not regex.match(method_args[name]):
                                 param_error = (f"User {identity} can call method {method_name} only "
                                                f"with {name} matching pattern {value} but "
@@ -158,10 +158,10 @@ class VolttronAuthzManager(AuthorizationManager, ABC):
         return True
 
     def check_pubsub_authorization(self, *, identity: authz.Identity, topic_pattern: str,
-                                   access: str, **kwargs) -> bool:
+                                   access: Literal["pubsub", "publish", "subscribe"], **kwargs) -> bool:
 
         if not self.is_protected_topic(topic_name_pattern=topic_pattern):
-            return False
+            return True
 
         capabilities = self._authz_map.agent_capabilities.get(identity).get("pubsub_capabilities")
 

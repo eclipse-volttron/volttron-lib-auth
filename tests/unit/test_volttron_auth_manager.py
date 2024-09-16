@@ -37,8 +37,21 @@ def test_create_and_is_protected_topic(monkeypatch):
         pubsub_caps = authz.PubsubCapabilities([authz.PubsubCapability(reg_ex_pattern, "publish")])
         manager.create_or_merge_agent_authz(identity="test_agent", pubsub_capabilities=pubsub_caps)
 
+        assert manager.check_pubsub_authorization(identity="test_agent", topic_pattern="foo", access="publish")
+        assert manager.check_pubsub_authorization(identity="test_agent", topic_pattern="foo", access="subscribe")
+
         assert manager.check_pubsub_authorization(identity="test_agent", topic_pattern=topic_pass, access="publish")
         assert not manager.check_pubsub_authorization(identity="test_agent", topic_pattern=topic_pass, access="subscribe")
+
+        pubsub_caps = authz.PubsubCapabilities([authz.PubsubCapability(reg_ex_pattern, "pubsub")])
+
+        manager.create_or_merge_agent_authz(identity="test_agent2", pubsub_capabilities=pubsub_caps)
+
+        assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern="foo", access="publish")
+        assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern="foo", access="subscribe")
+
+        assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern=topic_pass, access="publish")
+        assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern=topic_pass, access="subscribe")
 
     finally:
         try:
