@@ -28,7 +28,7 @@ def test_create_and_is_protected_topic(monkeypatch):
         topic_pass = "devices/building"
         topic_pass2 = "devices/"
 
-        manager.create_protected_topic(topic_name_pattern=reg_ex_pattern)
+        manager.create_protected_topics(topic_name_patterns=[reg_ex_pattern])
         assert not manager.is_protected_topic(topic_name_pattern=topic_fail)
         assert not manager.is_protected_topic(topic_name_pattern=topic_fail2)
         assert manager.is_protected_topic(topic_name_pattern=topic_pass)
