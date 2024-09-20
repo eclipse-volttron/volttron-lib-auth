@@ -37,9 +37,11 @@ def test_create_and_is_protected_topic(monkeypatch):
         pubsub_caps = authz.PubsubCapabilities([authz.PubsubCapability(reg_ex_pattern, "publish")])
         manager.create_or_merge_agent_authz(identity="test_agent", pubsub_capabilities=pubsub_caps)
 
+        # test that agent has both publish and subscribe access to a unprotected topic foo
         assert manager.check_pubsub_authorization(identity="test_agent", topic_pattern="foo", access="publish")
         assert manager.check_pubsub_authorization(identity="test_agent", topic_pattern="foo", access="subscribe")
 
+        # Check agent only has publish access to the protected topic and not subscribe
         assert manager.check_pubsub_authorization(identity="test_agent", topic_pattern=topic_pass, access="publish")
         assert not manager.check_pubsub_authorization(identity="test_agent", topic_pattern=topic_pass, access="subscribe")
 
@@ -47,11 +49,19 @@ def test_create_and_is_protected_topic(monkeypatch):
 
         manager.create_or_merge_agent_authz(identity="test_agent2", pubsub_capabilities=pubsub_caps)
 
+        # test_agent2 should have both publish and subscribe access to unprotected topic
         assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern="foo", access="publish")
         assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern="foo", access="subscribe")
 
+        # test_agent2 should have both publish and subscribe access to protected topic  as he has "pubsub" capabilitiy
         assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern=topic_pass, access="publish")
         assert manager.check_pubsub_authorization(identity="test_agent2", topic_pattern=topic_pass, access="subscribe")
+
+        # admin should have access to protected topics
+        pubsub_caps = authz.PubsubCapabilities([authz.PubsubCapability("/.*/", "pubsub")])
+        manager.create_or_merge_agent_authz(identity="admin_agent", pubsub_capabilities=pubsub_caps)
+        assert manager.check_pubsub_authorization(identity="admin_agent", topic_pattern=topic_pass, access="publish")
+        assert manager.check_pubsub_authorization(identity="admin_agent", topic_pattern=topic_pass, access="subscribe")
 
     finally:
         try:

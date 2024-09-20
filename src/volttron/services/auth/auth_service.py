@@ -133,9 +133,9 @@ class VolttronAuthService(AuthService, Agent):
             )
             self._authz_manager.create_or_merge_role(
                 name="admin",
-                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="/*/")]),
+                rpc_capabilities=authz.RPCCapabilities([authz.RPCCapability(resource="/.*/")]),
                 pubsub_capabilities=authz.PubsubCapabilities(
-                    [authz.PubsubCapability(topic_pattern="/*/", topic_access="pubsub")]))
+                    [authz.PubsubCapability(topic_pattern="/.*/", topic_access="pubsub")]))
 
             for k in volttron_services:
                 if k == CONFIGURATION_STORE:
