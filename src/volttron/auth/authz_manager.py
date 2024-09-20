@@ -163,6 +163,10 @@ class VolttronAuthzManager(AuthorizationManager):
         if not self.is_protected_topic(topic_name_pattern=topic_pattern):
             return True
 
+        # So if no agent_capabilities then we know this will always be false.
+        if not self._authz_map.agent_capabilities.get(identity):
+            return False
+
         capabilities = self._authz_map.agent_capabilities.get(identity).get("pubsub_capabilities")
 
         if not capabilities:
