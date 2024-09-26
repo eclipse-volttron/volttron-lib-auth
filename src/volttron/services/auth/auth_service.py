@@ -189,11 +189,6 @@ class VolttronAuthService(AuthService, Agent):
                                                             agent_roles=authz.AgentRoles([authz.AgentRole(
                                                                 "default_rpc_capabilities",
                                                                 param_restrictions={"identity": identity})]),
-                                                            protected_rpcs={
-                                                                "config.update",
-                                                                "config.initial_update",
-                                                                "rpc.add_protected_rpcs",
-                                                                "rpc.remove_protected_rpcs"},
                                                             comments="default authorization for new user")
         return True
 
