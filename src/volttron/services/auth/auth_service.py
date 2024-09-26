@@ -26,33 +26,20 @@ from __future__ import annotations
 
 __all__ = ["VolttronAuthService"]
 
-import bisect
 import logging
-import os
-import random
 import re
-import shutil
-import uuid
-from collections import defaultdict
-from typing import Optional, Any
+from typing import Any, Literal, Optional
 
 import cattrs
 import gevent
 import gevent.core
-import volttron.types.server_config as server_config
 from gevent.fileobject import FileObject
+
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
-                                              VOLTTRON_CENTRAL_PLATFORM,
                                               PLATFORM,
                                               PLATFORM_HEALTH)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError, Unreachable
-# TODO: it seems this should not be so nested of a import path.
-from volttron.client.vip.agent.subsystems.pubsub import ProtectedPubSubTopics
-# from volttron.server.containers import service_repo
-# from volttron.server.decorators import (authenticator, authorization_manager,
-#                                         authorizer, authservice,
-#                                         credentials_creator, credentials_store)
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsCreator,
@@ -63,18 +50,13 @@ from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types import Service
-# from volttron.types.service_interface import ServiceInterface
-from volttron.utils import ClientContext as cc
-from volttron.utils import create_file_if_missing, jsonapi, strip_comments
-from volttron.utils.certs import Certs
-from volttron.utils.filewatch import watch_file
+from volttron.utils import create_file_if_missing, jsonapi, strip_comments, get_logger
 from volttron.decorators import service
 import volttron.types.auth.authz_types as authz
 from volttron.utils.jsonrpc import MethodNotFound, RemoteError
 
 
-_log = logging.getLogger("auth_service")
-_log.setLevel(logging.DEBUG)
+_log = get_logger()
 
 _dump_re = re.compile(r"([,\\])")
 _load_re = re.compile(r"\\(.)|,")
@@ -97,6 +79,7 @@ class AuthFileAuthorization(Service, Authorizer):
 
 @service
 class VolttronAuthService(AuthService, Agent):
+
     class Meta:
         identity = AUTH
 
@@ -204,11 +187,6 @@ class VolttronAuthService(AuthService, Agent):
                                                             agent_roles=authz.AgentRoles([authz.AgentRole(
                                                                 "default_rpc_capabilities",
                                                                 param_restrictions={"identity": identity})]),
-                                                            protected_rpcs={
-                                                                "config.update",
-                                                                "config.initial_update",
-                                                                "rpc.add_protected_rpcs",
-                                                                "rpc.remove_protected_rpcs"},
                                                             comments="default authorization for new user")
         return True
 
@@ -235,10 +213,15 @@ class VolttronAuthService(AuthService, Agent):
         return self._authz_manager.check_rpc_authorization(identity=identity, method_name=method_name,
                                                            method_args=method_args, **kwargs)
     @RPC.export
-    def check_pubsub_authorization(self, *, identity: authz.Identity,
-                                   topic_pattern: str, access: str, **kwargs) -> bool:
+    def check_pubsub_authorization(self, *, identity: authz.Identity, topic_pattern: str,
+                                   access: Literal["pubsub", "publish", "subscribe"],
+                                   **kwargs) -> bool:
         return self._authz_manager.check_pubsub_authorization(identity=identity, topic_pattern=topic_pattern,
                                                               access=access, **kwargs)
+
+    @RPC.export
+    def is_protected_topic(self, *, topic_name_pattern: str) -> bool:
+        return self._authz_manager.is_protected_topic(topic_name_pattern=topic_name_pattern)
 
     def add_credentials(self, *, credentials: Credentials):
         self._credentials_store.store_credentials(credentials=credentials)
@@ -254,12 +237,13 @@ class VolttronAuthService(AuthService, Agent):
             returnval = False
         return returnval
 
+
     @RPC.export
     def create_or_merge_role(self,
                              *,
                              name: str,
-                             rpc_capabilities: authz.RPCCapabilities | dict = None,
-                             pubsub_capabilities: authz.PubsubCapabilities| dict = None,
+                             rpc_capabilities: Optional[authz.RPCCapabilities | dict] = None,
+                             pubsub_capabilities: Optional[authz.PubsubCapabilities| dict] = None,
                              **kwargs) -> bool:
         if rpc_capabilities and isinstance(rpc_capabilities, dict):
             rpc_capabilities = cattrs.structure(rpc_capabilities, authz.RPCCapabilities)
@@ -303,10 +287,10 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def create_or_merge_agent_authz(self, *,
                                     identity: str,
-                                    protected_rpcs: list[authz.vipid_dot_rpc_method] = None,
-                                    roles: authz.AgentRoles | dict = None,
-                                    rpc_capabilities: authz.RPCCapabilities | dict = None,
-                                    pubsub_capabilities: authz.PubsubCapabilities | dict = None,
+                                    protected_rpcs: Optional[list[authz.vipid_dot_rpc_method]] = None,
+                                    roles: Optional[authz.AgentRoles | dict] = None,
+                                    rpc_capabilities: Optional[authz.RPCCapabilities | dict] = None,
+                                    pubsub_capabilities: Optional[authz.PubsubCapabilities | dict] = None,
                                     comments: str = None,
                                     **kwargs) -> bool:
 
@@ -338,13 +322,22 @@ class VolttronAuthService(AuthService, Agent):
                            f"agent {identity}. Agent need to be restarted to apply the new authorization rules.", e)
         return result
 
+    @staticmethod
+    def _get_list_arg(topic_name_pattern) -> list[str]:
+        """If the argument passed is a list, then return it otherwise return a list with it in it."""
+        if not isinstance(topic_name_pattern, list):
+            topic_name_pattern = [topic_name_pattern]
+        return topic_name_pattern
 
     @RPC.export
-    def create_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+    def create_protected_topics(self, *, topic_name_patterns: list[str] | str) -> bool:
+        topic_name_patterns = VolttronAuthService._get_list_arg(topic_name_patterns)
         return self._authz_manager.create_protected_topics(topic_name_patterns=topic_name_patterns)
 
+
     @RPC.export
-    def remove_protected_topics(self, *, topic_name_patterns: list[str]) -> bool:
+    def remove_protected_topics(self, *, topic_name_patterns: list[str] | str) -> bool:
+        topic_name_patterns = VolttronAuthService._get_list_arg(topic_name_patterns)
         return self._authz_manager.remove_protected_topics(topic_name_patterns=topic_name_patterns)
 
     @RPC.export
