@@ -26,14 +26,10 @@ from __future__ import annotations
 
 __all__ = ["VolttronAuthService"]
 
-import logging
 import re
 from typing import Any, Literal, Optional
 
 import cattrs
-import gevent
-import gevent.core
-from gevent.fileobject import FileObject
 
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
@@ -49,8 +45,8 @@ from volttron.types.auth.auth_credentials import (Credentials,
 from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
-from volttron.types import Service
-from volttron.utils import create_file_if_missing, jsonapi, strip_comments, get_logger
+from volttron.types import Service, Identity
+from volttron.utils import get_logger
 from volttron.decorators import service
 import volttron.types.auth.authz_types as authz
 from volttron.utils.jsonrpc import MethodNotFound, RemoteError
@@ -172,6 +168,36 @@ class VolttronAuthService(AuthService, Agent):
 
     # TODO: protect these methods
     @RPC.export
+    def create_credentials(self, *, identity: Identity, **kwargs) -> bool:
+        try:
+            creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+        except IdentityNotFound as e:
+            # create new creds only if it doesn't exist
+            creds = self._credentials_creator.create(identity, **kwargs)
+            self._credentials_store.store_credentials(credentials=creds)
+
+        try:
+            creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+        except IdentityNotFound:
+            _log.error("Couldn't verify that credentials were made.")
+            return False
+
+        return True
+
+    # TODO: Should removing credentials also remove authz stuff?  I wasn't sure here.
+    @RPC.export
+    def remove_credentials(self, *, identity: str, **kwargs) -> bool:
+        self._credentials_store.remove_credentials(identity=identity)
+        return True
+
+    # TODO We don't have a mechanism right now to retrive all credentials in one go.
+    # @RPC.export
+    # def list_credentials(self) -> dict:
+    #     self._credentials_store.retrieve_credentials()
+
+
+    # TODO: protect these methods
+    @RPC.export
     def create_agent(self, *, identity: str, **kwargs) -> bool:
 
         try:
@@ -222,12 +248,6 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def is_protected_topic(self, *, topic_name_pattern: str) -> bool:
         return self._authz_manager.is_protected_topic(topic_name_pattern=topic_name_pattern)
-
-    def add_credentials(self, *, credentials: Credentials):
-        self._credentials_store.store_credentials(credentials=credentials)
-
-    def remove_credentials(self, *, credentials: Credentials):
-        self._credentials_store.remove_credentials(identity=credentials.identity)
 
     def is_credentials(self, *, identity: str) -> bool:
         try:
