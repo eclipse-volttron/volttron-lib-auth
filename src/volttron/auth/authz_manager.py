@@ -84,7 +84,7 @@ class VolttronAuthzManager(AuthorizationManager):
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
-    def create_or_merge_agent_authz(self, *, identity: str, protected_rpcs: set[authz.vipid_dot_rpc_method] = None,
+    def create_or_merge_agent_authz(self, *, identity: str, protected_rpcs: list[str] = None,
                                    agent_roles: authz.AgentRoles = None, rpc_capabilities: authz.RPCCapabilities = None,
                                    pubsub_capabilities: authz.PubsubCapabilities = None, comments: str = None,
                                    **kwargs) -> bool:

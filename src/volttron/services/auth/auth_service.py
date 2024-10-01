@@ -307,7 +307,7 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def create_or_merge_agent_authz(self, *,
                                     identity: str,
-                                    protected_rpcs: Optional[list[authz.vipid_dot_rpc_method]] = None,
+                                    protected_rpcs: Optional[list[str]] = None,
                                     roles: Optional[authz.AgentRoles | dict] = None,
                                     rpc_capabilities: Optional[authz.RPCCapabilities | dict] = None,
                                     pubsub_capabilities: Optional[authz.PubsubCapabilities | dict] = None,
