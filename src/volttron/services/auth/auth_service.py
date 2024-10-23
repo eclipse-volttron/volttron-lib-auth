@@ -178,8 +178,15 @@ class VolttronAuthService(AuthService, Agent):
 
         try:
             creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+            if self._authz_manager is not None:
+                self._authz_manager.create_or_merge_agent_authz(identity=identity,
+                                                                agent_roles=authz.AgentRoles([authz.AgentRole(
+                                                                    "default_rpc_capabilities",
+                                                                    param_restrictions={"identity": identity})]),
+                                                                comments="Created during creation of credentials!")
+
         except IdentityNotFound:
-            _log.error("Couldn't verify that credentials were made.")
+            _log.error("Create credentials failed!")
             return False
 
         return True

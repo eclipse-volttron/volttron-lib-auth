@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "volttron-lib-auth"
-version = "2.0.0rc0"
+version = "2.0.0rc1"
 description = "Base Authentication Library for VOLTTRON"
 authors = ["C. Allwardt <3979063+craig8@users.noreply.github.com>"]
 license = "Apache-2.0"
@@ -22,7 +22,8 @@ classifiers = [
 ]
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-volttron-core = ">=2.0.0rc0"
+volttron-core = { path="../volttron-core", develop = true}
+#volttron-core = ">=2.0.0rc0"
 
 [tool.poetry.group.dev.dependencies]
 # formatting, quality, tests
