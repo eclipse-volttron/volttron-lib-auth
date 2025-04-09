@@ -31,7 +31,7 @@ volttron-core = { path="../volttron-core", develop = true}
 
 
 [build-system]
-requires = ["poetry-core>=1.2.2"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.yapfignore]
