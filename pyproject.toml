@@ -52,4 +52,3 @@ split_before_logical_operator = true
 show_error_context = true
 pretty = true
 show_column_numbers = true
-
