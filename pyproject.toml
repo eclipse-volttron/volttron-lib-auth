@@ -22,12 +22,12 @@ classifiers = [
 ]
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-volttron-core = { path="../volttron-core", develop = true}
-#volttron-core = ">=2.0.0rc0"
+volttron-core = ">=2.0.0rc5"
 
 [tool.poetry.group.dev.dependencies]
 # formatting, quality, tests
-#volttron-testing = { path="../volttron-testing", develop = true}
+volttron-testing = { path="../volttron-testing", develop = true}
+#volttron-core = { path="../volttron-core", develop = true}
 
 
 [build-system]
