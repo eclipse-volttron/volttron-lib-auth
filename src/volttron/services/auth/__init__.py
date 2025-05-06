@@ -21,7 +21,5 @@
 #
 # ===----------------------------------------------------------------------===
 # }}}
-# import volttron.server.control
-# Import the auth so that the resolvers can work properly.
-import volttron.auth
+
 from volttron.services.auth.auth_service import VolttronAuthService
