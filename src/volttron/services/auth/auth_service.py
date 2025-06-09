@@ -43,7 +43,7 @@ from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsCreator,
                                                   CredentialsStore,
                                                   IdentityNotFound,
-                                                  PKICredentials)
+                                                  PublicCredentials)
 from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
@@ -179,7 +179,13 @@ class VolttronAuthService(AuthService, Agent):
             return self._credentials_store.retrieve_credentials(identity=identity)
         except IdentityNotFound as e:
             raise VIPError(f"Credentials not found for identity {identity}") from e
-        
+    
+    def add_federated_platform(self, *, platform_id: str, platform_address: str, public_platform_credentials: str) -> bool:
+        # TODO Store the address id etc and allow credentials to be retrieved
+        creds = PublicCredentials(identity=platform_id, publickey=public_platform_credentials)
+        self._credentials_store.store_credentials(credentials=creds)
+        return True
+
     # TODO: protect these methods
     @RPC.export
     def create_credentials(self, *, identity: Identity, **kwargs) -> bool:
