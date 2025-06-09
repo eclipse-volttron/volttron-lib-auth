@@ -35,7 +35,8 @@ import cattrs
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
                                               PLATFORM,
-                                              PLATFORM_HEALTH)
+                                              PLATFORM_HEALTH,
+                                              PLATFORM_FEDERATION)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError, Unreachable
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_credentials import (Credentials,
@@ -90,7 +91,7 @@ class VolttronAuthService(AuthService, Agent):
         self._credentials_creator = credentials_creator
         self._authz_manager = authz_manager
 
-        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH]
+        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH, PLATFORM_FEDERATION]
 
         for k in volttron_services:
             try:
@@ -167,6 +168,18 @@ class VolttronAuthService(AuthService, Agent):
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
 
+    def get_credentials(self, *, identity: Identity) -> Credentials:
+        """
+        Retrieve credentials for the given identity.
+
+        :param identity: The identity for which to retrieve credentials.
+        :return: Credentials object for the given identity.
+        """
+        try:
+            return self._credentials_store.retrieve_credentials(identity=identity)
+        except IdentityNotFound as e:
+            raise VIPError(f"Credentials not found for identity {identity}") from e
+        
     # TODO: protect these methods
     @RPC.export
     def create_credentials(self, *, identity: Identity, **kwargs) -> bool:
