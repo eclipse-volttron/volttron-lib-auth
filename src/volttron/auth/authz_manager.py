@@ -15,8 +15,7 @@ from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_service import AuthorizationManager, AuthzPersistence
 from volttron.decorators import service
 
-_log = logging.getLogger("auth_service")
-_log.setLevel(logging.DEBUG)
+_log = logging.getLogger(__name__)
 
 @service
 class FileBasedPersistence(AuthzPersistence):
