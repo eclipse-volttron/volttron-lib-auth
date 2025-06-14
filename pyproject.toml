@@ -26,7 +26,8 @@ volttron-core = ">=2.0.0rc5"
 
 [tool.poetry.group.dev.dependencies]
 # formatting, quality, tests
-volttron-testing = { path="../volttron-testing", develop = true}
+volttron-testing = ">=2.0.0rc5"
+#volttron-testing = { path="../volttron-testing", develop = true}
 #volttron-core = { path="../volttron-core", develop = true}
 
 
