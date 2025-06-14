@@ -10,7 +10,7 @@ homepage = "https://github.com/eclipse-volttron/volttron-lib-auth"
 keywords = []
 packages = [
     { include = "volttron", from = "src" },
-    { include = "volttron/py.typed", from = "src" }
+    { include = "authfixtures", from = "tests" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
@@ -22,12 +22,11 @@ classifiers = [
 ]
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-volttron-core = ">=2.0.0rc5"
+volttron = { path="../volttron-core", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 # formatting, quality, tests
-volttron-testing = { path="../volttron-testing", develop = true}
-#volttron-core = { path="../volttron-core", develop = true}
+volttron-test-utils = { path="../volttron-test-utils", develop = true}
 
 
 [build-system]
