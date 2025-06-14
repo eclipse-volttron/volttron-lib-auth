@@ -22,19 +22,9 @@ classifiers = [
     "Intended Audience :: Other Audience",
     "License :: OSI Approved :: Apache Software License"
 ]
-<<<<<<< Updated upstream
-[tool.poetry.dependencies]
-python = ">=3.10,<4.0"
-volttron = { path="../volttron-core", develop = true}
-
-[tool.poetry.group.dev.dependencies]
-# formatting, quality, tests
-volttron-test-utils = { path="../volttron-test-utils", develop = true}
-=======
 
 [tool.poetry.dependencies]
 volttron-core = { path="../volttron-core", develop = true}
->>>>>>> Stashed changes
 
 
 [build-system]
