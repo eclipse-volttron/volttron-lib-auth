@@ -30,7 +30,7 @@ import re
 from typing import Any, Literal, Optional
 
 import cattrs
-
+import logging
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
                                               PLATFORM,
@@ -46,13 +46,12 @@ from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
 from volttron.types import Service, Identity
-from volttron.utils import get_logger
 from volttron.decorators import service
 import volttron.types.auth.authz_types as authz
 from volttron.utils.jsonrpc import MethodNotFound, RemoteError
 
 
-_log = get_logger()
+_log = logging.getLogger(__name__)
 
 _dump_re = re.compile(r"([,\\])")
 _load_re = re.compile(r"\\(.)|,")
