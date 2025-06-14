@@ -3,7 +3,7 @@ name: Deploy Pre-Release Artifacts
 
 on:
   schedule:
-    - cron: '0 6 * * 6' # Original schedule (e.g., Wednesday at 12 PM UTC)
+    - cron: '0 7 * * 6' # Once a week
   workflow_dispatch: # Allows manual triggering of the workflow
 
 permissions:
