@@ -29,6 +29,7 @@ __all__ = ["VolttronAuthService"]
 import re
 import logging
 from typing import Any, Literal, Optional
+import time
 
 import cattrs
 import logging
@@ -196,10 +197,11 @@ class VolttronAuthService(AuthService, Agent):
                 'timestamp': time.time()
             }
             
-            # TODO: For enhanced security, we might want to:
-            # 1. Verify the credentials format
-            # 2. Add the platform to a special "federation" role
-            # 3. Persist the federation information
+            platform_identity = f"{platform_id}"
+            public_creds = PublicCredentials(identity=f"{platform_identity}", publickey=credentials)
+
+            self._credentials_store.store_credentials(credentials=public_creds)
+
             
             _log.info(f"Federation platform registered: {platform_id}")
             return True
