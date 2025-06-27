@@ -161,12 +161,6 @@ class VolttronAuthService(AuthService, Agent):
 
         self._federation_platforms = {}
 
-        # TODO: setup_mode is not in options for right now this is a TODO for it.
-        # self._setup_mode = False  # options.setup_mode
-        # self._auth_pending = []
-        # self._auth_denied = []
-        # self._auth_approved = []
-
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
         
