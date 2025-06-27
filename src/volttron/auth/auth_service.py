@@ -27,21 +27,24 @@ from __future__ import annotations
 __all__ = ["VolttronAuthService"]
 
 import re
+import logging
 from typing import Any, Literal, Optional
+import time
 
 import cattrs
 import logging
 from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
                                               PLATFORM,
-                                              PLATFORM_HEALTH)
+                                              PLATFORM_HEALTH,
+                                              PLATFORM_FEDERATION)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError, Unreachable
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_credentials import (Credentials,
                                                   CredentialsCreator,
                                                   CredentialsStore,
                                                   IdentityNotFound,
-                                                  PKICredentials)
+                                                  PublicCredentials)
 from volttron.types.auth.auth_service import (AuthService,
                                               Authenticator,
                                               AuthorizationManager, Authorizer)
@@ -88,7 +91,7 @@ class VolttronAuthService(AuthService, Agent):
         self._credentials_creator = credentials_creator
         self._authz_manager = authz_manager
 
-        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH]
+        volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH, PLATFORM_FEDERATION]
 
         for k in volttron_services:
             try:
@@ -156,6 +159,8 @@ class VolttronAuthService(AuthService, Agent):
         self.core.delay_running_event_set = False
         self._is_connected = False
 
+        self._federation_platforms = {}
+
         # TODO: setup_mode is not in options for right now this is a TODO for it.
         # self._setup_mode = False  # options.setup_mode
         # self._auth_pending = []
@@ -164,6 +169,112 @@ class VolttronAuthService(AuthService, Agent):
 
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
+        
+    def get_credentials(self, *, identity: Identity) -> Credentials:
+        """
+        Retrieve credentials for the given identity.
+
+        :param identity: The identity for which to retrieve credentials.
+        :return: Credentials object for the given identity.
+        """
+        try:
+            return self._credentials_store.retrieve_credentials(identity=identity)
+        except IdentityNotFound as e:
+            raise VIPError(f"Credentials not found for identity {identity}") from e
+    
+    def add_federation_platform(self, platform_id: str, credentials: Any) -> bool:
+        """
+        Register a remote platform for federation access
+        
+        :param platform_id: ID of the remote platform
+        :param credentials: Authentication credentials for the remote platform (public key)
+        :return: True if registration was successful, False otherwise
+        """
+        try:
+            # Store the platform credentials
+            self._federation_platforms[platform_id] = {
+                'credentials': credentials,
+                'timestamp': time.time()
+            }
+            
+            platform_identity = f"{platform_id}"
+            public_creds = PublicCredentials(identity=f"{platform_identity}", publickey=credentials)
+
+            self._credentials_store.store_credentials(credentials=public_creds)
+
+            
+            _log.info(f"Federation platform registered: {platform_id}")
+            return True
+        except Exception as e:
+            _log.error(f"Error registering federation platform {platform_id}: {e}")
+            return False
+    
+    def remove_federation_platform(self, platform_id: str) -> bool:
+        """
+        Remove a previously registered federated platform
+        
+        :param platform_id: ID of the remote platform
+        :return: True if removal was successful, False otherwise
+        """
+        try:
+            if platform_id in self._federation_platforms:
+                del self._federation_platforms[platform_id]
+                _log.info(f"Federation platform removed: {platform_id}")
+                
+                # TODO: Remove from persistence if implemented
+                
+                return True
+            else:
+                _log.warning(f"Attempt to remove non-existent federation platform: {platform_id}")
+                return False
+        except Exception as e:
+            _log.error(f"Error removing federation platform {platform_id}: {e}")
+            return False
+    
+    def validate_federation_connection(self, platform_id: str, credentials: Any) -> bool:
+        """
+        Validate a federation connection attempt
+        
+        :param platform_id: ID of the remote platform
+        :param credentials: Authentication credentials presented by the remote platform
+        :return: True if validation was successful, False otherwise
+        """
+        try:
+            if platform_id in self._federation_platforms:
+                stored_credentials = self._federation_platforms[platform_id]['credentials']
+                
+                # Implement proper credential validation based on the credential format
+                # For simple public key credentials:
+                is_valid = (credentials == stored_credentials)
+                
+                if is_valid:
+                    _log.debug(f"Federation connection validated for platform: {platform_id}")
+                else:
+                    _log.warning(f"Federation validation failed for platform: {platform_id}")
+                
+                return is_valid
+            else:
+                _log.warning(f"Federation validation failed - platform not registered: {platform_id}")
+                return False
+        except Exception as e:
+            _log.error(f"Error validating federation platform {platform_id}: {e}")
+            return False
+    
+    def get_federation_credentials(self, platform_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get federation credentials for a specific platform or all platforms
+        
+        :param platform_id: Optional ID of a specific platform
+        :return: Dictionary of platform IDs mapped to credential information
+        """
+        if platform_id is not None:
+            # Return credentials for specific platform if it exists
+            if platform_id in self._federation_platforms:
+                return {platform_id: self._federation_platforms[platform_id]}
+            return {}
+        
+        # Return all federation platforms
+        return self._federation_platforms.copy()
 
     # TODO: protect these methods
     @RPC.export
