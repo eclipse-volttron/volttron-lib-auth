@@ -28,7 +28,7 @@ __all__ = ["VolttronAuthService"]
 
 import re
 import logging
-from typing import Any, Literal, Optional, Dict
+from typing import Any, Literal, Optional
 import time
 
 import cattrs
@@ -176,12 +176,13 @@ class VolttronAuthService(AuthService, Agent):
         except IdentityNotFound as e:
             raise VIPError(f"Credentials not found for identity {identity}") from e
     
-    def register_remote_platform(self, platform_id: str, credentials: Any):
+    def add_federation_platform(self, platform_id: str, credentials: Any) -> bool:
         """
         Register a remote platform for federation access
         
         :param platform_id: ID of the remote platform
         :param credentials: Authentication credentials for the remote platform (public key)
+        :return: True if registration was successful, False otherwise
         """
         try:
             # Store the platform credentials
@@ -189,12 +190,18 @@ class VolttronAuthService(AuthService, Agent):
                 'credentials': credentials,
                 'timestamp': time.time()
             }
+
             platform_identity = f"{platform_id}"
             public_creds = PublicCredentials(identity=f"{platform_identity}", publickey=credentials)
-            self._credentials_store.store_credentials(credentials=public_creds, overwrite=True)
+
+            self._credentials_store.store_credentials(credentials=public_creds)
+
+
+            _log.info(f"Federation platform registered: {platform_id}")
+            return True
         except Exception as e:
             _log.error(f"Error registering federation platform {platform_id}: {e}")
-            raise
+            return False
     
     def remove_federation_platform(self, platform_id: str) -> bool:
         """
