@@ -176,13 +176,12 @@ class VolttronAuthService(AuthService, Agent):
         except IdentityNotFound as e:
             raise VIPError(f"Credentials not found for identity {identity}") from e
     
-    def add_federation_platform(self, platform_id: str, credentials: Any) -> bool:
+    def register_remote_platform(self, platform_id: str, credentials: Any):
         """
         Register a remote platform for federation access
         
         :param platform_id: ID of the remote platform
         :param credentials: Authentication credentials for the remote platform (public key)
-        :return: True if registration was successful, False otherwise
         """
         try:
             # Store the platform credentials
@@ -193,15 +192,10 @@ class VolttronAuthService(AuthService, Agent):
 
             platform_identity = f"{platform_id}"
             public_creds = PublicCredentials(identity=f"{platform_identity}", publickey=credentials)
-
-            self._credentials_store.store_credentials(credentials=public_creds)
-
-
-            _log.info(f"Federation platform registered: {platform_id}")
-            return True
+            self._credentials_store.store_credentials(credentials=public_creds, overwrite=True)
         except Exception as e:
             _log.error(f"Error registering federation platform {platform_id}: {e}")
-            return False
+            raise
     
     def remove_federation_platform(self, platform_id: str) -> bool:
         """
