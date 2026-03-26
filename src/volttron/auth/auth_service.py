@@ -37,7 +37,7 @@ from volttron.client.known_identities import (AUTH, CONFIGURATION_STORE,
                                               CONTROL, CONTROL_CONNECTION,
                                               PLATFORM,
                                               PLATFORM_HEALTH,
-                                              PLATFORM_FEDERATION)
+                                              PLATFORM_FEDERATION, PLATFORM_WEB)
 from volttron.client.vip.agent import RPC, Agent, Core, VIPError, Unreachable
 from volttron.server.server_options import ServerOptions
 from volttron.types.auth.auth_credentials import (Credentials,
@@ -92,7 +92,8 @@ class VolttronAuthService(AuthService, Agent):
         self._authz_manager = authz_manager
 
         volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH, PLATFORM_FEDERATION]
-
+        if 'web' in server_options.services:
+            volttron_services.append(PLATFORM_WEB)
         for k in volttron_services:
             try:
                 self._credentials_store.retrieve_credentials(identity=k)
