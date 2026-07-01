@@ -250,17 +250,17 @@ def list_auth(opts, indices=None):
 class AuthCtlParser(ControlParser):
     """
     vctl 'auth' subcommand parser plugin.
-    
+
     Provides commands for managing agent authentication credentials.
     """
-    
+
     class Meta:
         name = "auth"
-    
+
     def configure(self, ctx):
         """
         Configure the 'auth' subcommand and its subparsers.
-        
+
         :param ctx: VctlParserContext for registering commands
         """
         # Top-level 'auth' command

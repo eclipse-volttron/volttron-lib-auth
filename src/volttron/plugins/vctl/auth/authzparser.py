@@ -25,7 +25,7 @@
 """
 vctl authz subcommand parser plugin.
 
-This module provides the 'vctl authz' subcommand for managing authorization 
+This module provides the 'vctl authz' subcommand for managing authorization
 for rpc methods and pubsub topics.
 """
 
@@ -629,17 +629,17 @@ class AuthZUtils:
 class AuthzCtlParser(ControlParser):
     """
     vctl 'authz' subcommand parser plugin.
-    
+
     Provides commands for managing authorization for rpc methods and pubsub topics.
     """
-    
+
     class Meta:
         name = "authz"
-    
+
     def configure(self, ctx):
         """
         Configure the 'authz' subcommand and its subparsers.
-        
+
         :param ctx: VctlParserContext for registering commands
         """
         # Call the original add_authz_parser function, wrapping it to use the new context
