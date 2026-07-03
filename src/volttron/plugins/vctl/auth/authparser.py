@@ -33,6 +33,7 @@ import sys
 import collections
 
 from volttron.utils import jsonapi
+from volttron.utils.prompts import InteractiveAsker, prompt_yes_no
 from volttron.client.known_identities import AUTH
 from volttron.types.auth import AuthException
 from volttron.types.factories import ControlParser
@@ -82,57 +83,6 @@ def _ask_for_auth_fields(
 ):
     """Prompts user for Auth Entry fields."""
 
-    class Asker(object):
-
-        def __init__(self):
-            self._fields = collections.OrderedDict()
-
-        def add(
-                self,
-                name,
-                default=None,
-                note=None,
-                callback=lambda x: x,
-                validate=lambda x, y: (True, ""),
-        ):
-            self._fields[name] = {
-                "note": note,
-                "default": default,
-                "callback": callback,
-                "validate": validate,
-            }
-
-        def ask(self):
-            for name in self._fields:
-                note = self._fields[name]["note"]
-                default = self._fields[name]["default"]
-                callback = self._fields[name]["callback"]
-                validate = self._fields[name]["validate"]
-                if isinstance(default, list):
-                    default_str = "{}".format(",".join(default))
-                elif default is None:
-                    default_str = ""
-                else:
-                    default_str = default
-                note = "({}) ".format(note) if note else ""
-                question = "{} {}[{}]: ".format(name, note, default_str)
-                valid = False
-                while not valid:
-                    response = input(question).strip()
-                    if response == "":
-                        response = default
-                    if response == "clear":
-                        # Import here to avoid circular dependency
-                        from volttron.client.commands.control import _ask_yes_no
-                        if _ask_yes_no("Do you want to clear this field?"):
-                            response = None
-                    valid, msg = validate(response, self._fields)
-                    if not valid:
-                        _stderr.write("{}\n".format(msg))
-
-                self._fields[name]["response"] = callback(response)
-            return {k: self._fields[k]["response"] for k in self._fields}
-
     def to_true_or_false(response):
         if isinstance(response, str):
             return {"true": True, "false": False}[response.lower()]
@@ -162,7 +112,7 @@ def _ask_for_auth_fields(
             return False, str(e)
         return True, None
 
-    asker = Asker()
+    asker = InteractiveAsker()
     asker.add("domain", domain)
     asker.add("address", address)
     asker.add("user_id", user_id)
@@ -221,7 +171,6 @@ def add_auth(opts):
 
 def remove_auth(opts):
     """Remove authentication credentials."""
-    from volttron.client.commands.control import _ask_yes_no
     conn = opts.connection
     if not conn:
         _stderr.write("VOLTTRON is not running. This command "
@@ -230,7 +179,7 @@ def remove_auth(opts):
 
     _stdout.write(f"This action will remove the identity {opts.identity}\n")
 
-    if not _ask_yes_no("Do you wish to delete?"):
+    if not prompt_yes_no("Do you wish to delete?"):
         return
     try:
         conn.server.vip.rpc.call(AUTH, "remove_credentials", identity=opts.identity)
