@@ -134,7 +134,7 @@ class VolttronAuthService(AuthService, Agent):
                 if k == AUTH:
                     self._authz_manager.create_or_merge_agent_authz(
                         identity=k,
-                        protected_rpcs={"create_agent", "remove_agent", "create_or_merge_role",
+                        protected_rpcs={"remove_agent", "create_or_merge_role",
                                         "create_or_merge_agent_group", "create_or_merge_agent_authz",
                                         "create_protected_topics", "remove_agents_from_group", "add_agents_to_group",
                                         "remove_protected_topics", "remove_agent_authorization",
@@ -163,7 +163,7 @@ class VolttronAuthService(AuthService, Agent):
 
     def client_connected(self, client_credentials: Credentials):
         _log.debug(f"Client connected: {client_credentials}")
-        
+
     def get_credentials(self, *, identity: Identity) -> Credentials:
         """
         Retrieve credentials for the given identity.
@@ -175,11 +175,11 @@ class VolttronAuthService(AuthService, Agent):
             return self._credentials_store.retrieve_credentials(identity=identity)
         except IdentityNotFound as e:
             raise VIPError(f"Credentials not found for identity {identity}") from e
-    
+
     def register_remote_platform(self, platform_id: str, credentials: Any):
         """
         Register a remote platform for federation access
-        
+
         :param platform_id: ID of the remote platform
         :param credentials: Authentication credentials for the remote platform (public key)
         """
@@ -196,11 +196,11 @@ class VolttronAuthService(AuthService, Agent):
         except Exception as e:
             _log.error(f"Error registering federation platform {platform_id}: {e}")
             raise
-    
+
     def remove_federation_platform(self, platform_id: str) -> bool:
         """
         Remove a previously registered federated platform
-        
+
         :param platform_id: ID of the remote platform
         :return: True if removal was successful, False otherwise
         """
@@ -208,9 +208,9 @@ class VolttronAuthService(AuthService, Agent):
             if platform_id in self._federation_platforms:
                 del self._federation_platforms[platform_id]
                 _log.info(f"Federation platform removed: {platform_id}")
-                
+
                 # TODO: Remove from persistence if implemented
-                
+
                 return True
             else:
                 _log.warning(f"Attempt to remove non-existent federation platform: {platform_id}")
@@ -218,11 +218,11 @@ class VolttronAuthService(AuthService, Agent):
         except Exception as e:
             _log.error(f"Error removing federation platform {platform_id}: {e}")
             return False
-    
+
     def validate_federation_connection(self, platform_id: str, credentials: Any) -> bool:
         """
         Validate a federation connection attempt
-        
+
         :param platform_id: ID of the remote platform
         :param credentials: Authentication credentials presented by the remote platform
         :return: True if validation was successful, False otherwise
@@ -230,16 +230,16 @@ class VolttronAuthService(AuthService, Agent):
         try:
             if platform_id in self._federation_platforms:
                 stored_credentials = self._federation_platforms[platform_id]['credentials']
-                
+
                 # Implement proper credential validation based on the credential format
                 # For simple public key credentials:
                 is_valid = (credentials == stored_credentials)
-                
+
                 if is_valid:
                     _log.debug(f"Federation connection validated for platform: {platform_id}")
                 else:
                     _log.warning(f"Federation validation failed for platform: {platform_id}")
-                
+
                 return is_valid
             else:
                 _log.warning(f"Federation validation failed - platform not registered: {platform_id}")
@@ -247,11 +247,11 @@ class VolttronAuthService(AuthService, Agent):
         except Exception as e:
             _log.error(f"Error validating federation platform {platform_id}: {e}")
             return False
-    
+
     def get_federation_credentials(self, platform_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get federation credentials for a specific platform or all platforms
-        
+
         :param platform_id: Optional ID of a specific platform
         :return: Dictionary of platform IDs mapped to credential information
         """
@@ -260,7 +260,7 @@ class VolttronAuthService(AuthService, Agent):
             if platform_id in self._federation_platforms:
                 return {platform_id: self._federation_platforms[platform_id]}
             return {}
-        
+
         # Return all federation platforms
         return self._federation_platforms.copy()
 
@@ -273,9 +273,6 @@ class VolttronAuthService(AuthService, Agent):
             # create new creds only if it doesn't exist
             creds = self._credentials_creator.create(identity, **kwargs)
             self._credentials_store.store_credentials(credentials=creds)
-
-        try:
-            creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
             if self._authz_manager is not None:
                 self._authz_manager.create_or_merge_agent_authz(identity=identity,
                                                                 agent_roles=authz.AgentRoles([authz.AgentRole(
@@ -283,9 +280,13 @@ class VolttronAuthService(AuthService, Agent):
                                                                     param_restrictions={"identity": identity})]),
                                                                 comments="Created during creation of credentials!")
 
-        except IdentityNotFound:
-            _log.error("Create credentials failed!")
-            return False
+            try:
+                creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+                # _log.info("GOT agent capabilities in create: %s", self._authz_manager.get_agent_capabilities(identity=identity))
+                # _log.info("Additional kwargs: %s", kwargs)
+            except IdentityNotFound:
+                _log.error("Create credentials failed!")
+                return False
 
         return True
 
@@ -300,26 +301,6 @@ class VolttronAuthService(AuthService, Agent):
     # def list_credentials(self) -> dict:
     #     self._credentials_store.retrieve_credentials()
 
-
-    # TODO: protect these methods
-    @RPC.export
-    def create_agent(self, *, identity: str, **kwargs) -> bool:
-
-        try:
-            creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
-        except IdentityNotFound as e:
-            # create new creds only if it doesn't exist
-            creds = self._credentials_creator.create(identity, **kwargs)
-            self._credentials_store.store_credentials(credentials=creds)
-
-        if not self._authz_manager.get_agent_capabilities(identity=identity):
-            # create default only for new users
-            self._authz_manager.create_or_merge_agent_authz(identity=identity,
-                                                            agent_roles=authz.AgentRoles([authz.AgentRole(
-                                                                "default_rpc_capabilities",
-                                                                param_restrictions={"identity": identity})]),
-                                                            comments="default authorization for new user")
-        return True
 
     @RPC.export
     def get_agent_capabilities(self, identity: str):
@@ -337,6 +318,12 @@ class VolttronAuthService(AuthService, Agent):
     @RPC.export
     def get_protected_rpcs(self, identity:authz.Identity) -> list[str]:
         return self._authz_manager.get_protected_rpcs(identity)
+
+    @RPC.export
+    def reload_authz(self) -> None:
+        """Reload the authz map from disk. Call this after writing authz files directly."""
+        if self._authz_manager is not None:
+            self._authz_manager.reload()
 
     @RPC.export
     def check_rpc_authorization(self, *, identity: authz.Identity, method_name: authz.vipid_dot_rpc_method,
