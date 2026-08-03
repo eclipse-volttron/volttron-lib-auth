@@ -95,6 +95,10 @@ class VolttronAuthzManager(AuthorizationManager):
             self.persistence.store(self._authz_map, file=self.authz_path)
         return result
 
+    def reload(self) -> None:
+        """Re-read authz.json from disk, replacing the in-memory map."""
+        self._authz_map = self.persistence.load(self.authz_path)
+
     def get_protected_rpcs(self, identity) -> list[str]:
         return self._authz_map.get_protected_rpcs(identity)
 
