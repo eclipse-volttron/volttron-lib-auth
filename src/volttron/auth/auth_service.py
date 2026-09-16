@@ -265,24 +265,64 @@ class VolttronAuthService(AuthService, Agent):
         # Return all federation platforms
         return self._federation_platforms.copy()
 
+    @RPC.export
+    def get_public_credentials(self, *, identities: list[Identity]= [], **kwargs) -> dict:
+        """
+        Retrieve public credentials for specified identities.
+
+        Returns a dictionary with 'results' and 'errors' keys:
+        - 'results': dict mapping identities to their public credentials
+        - 'errors': dict mapping identities to error messages (if any)
+        """
+        results: dict = {}
+        errors: dict = {}
+
+        if identities is not None:
+            for identity in identities:
+                try:
+                    c = self._credentials_store.retrieve_credentials(identity=identity)
+                    results[identity] = c.get_public_part()
+                except IdentityNotFound as e:
+                    error_msg = f"Identity not found: {identity}"
+                    _log.warning(error_msg)
+                    errors[identity] = error_msg
+                except Exception as e:
+                    error_msg = f"Error retrieving credentials for {identity}: {str(e)}"
+                    _log.warning(error_msg)
+                    errors[identity] = error_msg
+
+        return {
+            'results': results,
+            'errors': errors
+        }
+
     # TODO: protect these methods
     @RPC.export
     def create_credentials(self, *, identity: Identity, **kwargs) -> bool:
+        """Create credentials for an identity.
+
+        Accepts any kwargs that the credentials_creator.create() method supports,
+        including publickey and secretkey for PKI credentials.
+        """
         try:
-            creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+            creds = self._credentials_store.retrieve_credentials(identity=identity)
+            # Credentials already exist, return success
+            return True
         except IdentityNotFound as e:
-            # create new creds only if it doesn't exist
+            # Credentials don't exist, create them
             creds = self._credentials_creator.create(identity, **kwargs)
             self._credentials_store.store_credentials(credentials=creds)
+
             if self._authz_manager is not None:
-                self._authz_manager.create_or_merge_agent_authz(identity=identity,
-                                                                agent_roles=authz.AgentRoles([authz.AgentRole(
-                                                                    "default_rpc_capabilities",
-                                                                    param_restrictions={"identity": identity})]),
-                                                                comments="Created during creation of credentials!")
+                self._authz_manager.create_or_merge_agent_authz(
+                    identity=identity,
+                    agent_roles=authz.AgentRoles([authz.AgentRole(
+                        "default_rpc_capabilities",
+                        param_restrictions={"identity": identity})]),
+                    comments="Created during creation of credentials!")
 
             try:
-                creds = self._credentials_store.retrieve_credentials(identity=identity, **kwargs)
+                creds = self._credentials_store.retrieve_credentials(identity=identity)
                 # _log.info("GOT agent capabilities in create: %s", self._authz_manager.get_agent_capabilities(identity=identity))
                 # _log.info("Additional kwargs: %s", kwargs)
             except IdentityNotFound:
