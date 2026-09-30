@@ -92,6 +92,7 @@ class VolttronAuthService(AuthService, Agent):
         self._authz_manager = authz_manager
 
         volttron_services = [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH, PLATFORM_FEDERATION]
+        admin_services =  [CONFIGURATION_STORE, AUTH, CONTROL_CONNECTION, CONTROL, PLATFORM, PLATFORM_HEALTH, PLATFORM_FEDERATION]
         if 'web' in server_options.services:
             volttron_services.append(PLATFORM_WEB)
         for k in volttron_services:
@@ -141,12 +142,36 @@ class VolttronAuthService(AuthService, Agent):
                                         "remove_protected_topics", "remove_agent_authorization",
                                         "remove_agent_group", "remove_role"},
                         comments="Automatically added by init of auth service")
+                if k == CONTROL:
+                    self._authz_manager.create_or_merge_agent_authz(
+                                            identity=k,
+                                            protected_rpcs={"clear_status", "start_agent",
+                                                            "stop_agent", "restart_agent",
+                                                            "shutdown", "stop_platform", "tag_agent",
+                                                            "remove_agent", "prioritize_agent",
+                                                            "install_agent", "install_library",  "remove_library"},
+                                            comments="Automatically added by init of auth service")
+                if k == PLATFORM_WEB:
+                    self._authz_manager.create_or_merge_agent_authz(
+                                                                identity=k,
+                                                                protected_rpcs=["register_endpoint", "register_agent_route",
+                                                                                "register_path_route", "register_websocket",
+                                                                                "unregister_websocket", "websocket_send"],
+                                                                rpc_capabilities=authz.RPCCapabilities([
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.clear_status"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.start_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.stop_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.restart_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.tag_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.prioritize_agent")
+                                                                ])
+                    )
                 else:
                     self._authz_manager.create_or_merge_agent_authz(
                         identity=k, comments="Automatically added by init of auth service")
 
             self._authz_manager.create_or_merge_agent_group(name="admin_users",
-                                                            identities=set(volttron_services),
+                                                            identities=set(admin_services),
                                                             agent_roles=authz.AgentRoles(
                                                                 [authz.AgentRole(role_name="admin")]), )
 
