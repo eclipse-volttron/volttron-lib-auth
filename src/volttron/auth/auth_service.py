@@ -149,7 +149,7 @@ class VolttronAuthService(AuthService, Agent):
                                                             "stop_agent", "restart_agent",
                                                             "shutdown", "stop_platform", "tag_agent",
                                                             "remove_agent", "prioritize_agent",
-                                                            "install_agent", "install_libary",  "remove_library"},
+                                                            "install_agent", "install_library",  "remove_library"},
                                             comments="Automatically added by init of auth service")
                 if k == PLATFORM_WEB:
                     self._authz_manager.create_or_merge_agent_authz(
@@ -158,12 +158,12 @@ class VolttronAuthService(AuthService, Agent):
                                                                                 "register_path_route", "register_websocket",
                                                                                 "unregister_websocket", "websocket_send"],
                                                                 rpc_capabilities=authz.RPCCapabilities([
-                                                                    authz.RPCCapability(resource="f{CONTROL}.clear_status"),
-                                                                    authz.RPCCapability(resource="f{CONTROL}.start_agent"),
-                                                                    authz.RPCCapability(resource="f{CONTROL}.stop_agent"),
-                                                                    authz.RPCCapability(resource="f{CONTROL}.restart_agent"),
-                                                                    authz.RPCCapability(resource="f{CONTROL}.tag_agent"),
-                                                                    authz.RPCCapability(resource="f{CONTROL}.prioritize_agents")
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.clear_status"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.start_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.stop_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.restart_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.tag_agent"),
+                                                                    authz.RPCCapability(resource=f"{CONTROL}.prioritize_agent")
                                                                 ])
                     )
                 else:
