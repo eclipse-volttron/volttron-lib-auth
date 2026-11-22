@@ -422,3 +422,22 @@ class TestRemoveAuth:
         calls = [str(call) for call in mock_stdout.write.call_args_list]
         assert any('agent1 removed!' in str(call) for call in calls)
         mock_opts_with_connection.connection.server.vip.rpc.call.assert_called_once()
+
+
+@pytest.mark.parametrize("args", [["--json", "auth", "agentcred"], ["auth", "agentcred", "--json"]])
+def test_agentcred_json_on_either_side_of_the_command(args):
+    """vctl's --json is top-level; agentcred's own --json has no default, so a value given before the command
+    survives under plain argparse, which copies a command's defaults over the top-level values (volttron-core#374)."""
+    import argparse
+    from volttron.plugins.vctl.auth.authparser import AuthCtlParser
+    from volttron.types.factories import VctlParserContext
+
+    global_args = argparse.ArgumentParser(add_help=False, argument_default=argparse.SUPPRESS)
+    filterable = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(parents=[global_args])
+    parser.add_argument("--json", action="store_true", default=False)
+    subparsers = parser.add_subparsers(dest="command")
+    AuthCtlParser().configure(VctlParserContext(subparsers=subparsers, global_args=global_args,
+                                                filterable=filterable))
+    assert parser.parse_args(args).json is True
+    assert parser.parse_args(["auth", "agentcred"]).json is False
