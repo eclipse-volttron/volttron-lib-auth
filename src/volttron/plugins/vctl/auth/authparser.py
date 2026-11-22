@@ -28,6 +28,7 @@ vctl auth subcommand parser plugin.
 This module provides the 'vctl auth' subcommand for managing agent credentials.
 """
 
+import argparse
 import logging
 import sys
 import collections
@@ -346,7 +347,9 @@ class AuthCtlParser(ControlParser):
                                             help="return public part of all agents")
         agentcred.add_argument("identity", nargs="*",
                                help="Optional agent identity/identities. If not specified, returns all agents public credentials.")
-        agentcred.add_argument("--json", action="store_true", help="Output results in JSON format")
+        # No default, so "vctl --json auth agentcred" keeps vctl's top-level --json (volttron-core#374).
+        agentcred.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                               help="Output results in JSON format")
         agentcred.set_defaults(func=get_public_credentials)
 
         # # auth list
